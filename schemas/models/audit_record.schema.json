@@ -1,0 +1,76 @@
+{
+  "properties": {
+    "audit_id": {
+      "title": "Audit Id",
+      "type": "string"
+    },
+    "pilot_id": {
+      "title": "Pilot Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "timestamp_opened": {
+      "format": "date-time",
+      "title": "Timestamp Opened",
+      "type": "string"
+    },
+    "timestamp_closed": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timestamp Closed"
+    },
+    "verdict": {
+      "title": "Verdict",
+      "type": "string"
+    },
+    "action_results": {
+      "default": [],
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Action Results",
+      "type": "array"
+    },
+    "latencies_ms": {
+      "default": [],
+      "items": {
+        "type": "integer"
+      },
+      "title": "Latencies Ms",
+      "type": "array"
+    },
+    "closed": {
+      "default": false,
+      "title": "Closed",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "audit_id",
+    "pilot_id",
+    "event_id",
+    "request_id",
+    "timestamp_opened",
+    "verdict"
+  ],
+  "title": "AuditRecord",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/audit_record.schema.json"
+}

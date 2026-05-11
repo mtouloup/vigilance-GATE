@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/broker/topics.json",
+  "title": "T5.3 Message Broker Integration Interface",
+  "description": "Defines the message broker topics, direction, and payload schemas for inter-component communication in the T5.3 Agentic Wrapper Framework.",
+  "broker": {
+    "type": "RabbitMQ",
+    "protocol": "AMQP 0-9-1",
+    "connection": {
+      "env_var": "AMQP_URL",
+      "default_docker": "amqp://vigilance:vigilance@rabbitmq:5672/",
+      "fallback": "InMemoryBroker (when AMQP_URL is unset)"
+    },
+    "queue_config": {
+      "durable": true,
+      "delivery_mode": 2
+    }
+  },
+  "topics": [
+    {
+      "name": "pilot.events.raw",
+      "direction": "inbound",
+      "description": "Raw security events arriving from pilot tools (OTE SIEM, Siemens SCADA monitors). Entry point for the T5.3 pipeline.",
+      "producers": ["OTE IDS/SIEM", "Siemens OT Monitor", "Digital Twin (WP3 D-VISOR)"],
+      "consumers": ["C1 — Event Ingestion & Normalization"],
+      "payload": {
+        "description": "Wraps the raw event string or object under a 'raw' key.",
+        "example_cef": {
+          "raw": "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
+        },
+        "example_ot_json": {
+          "raw": {
+            "plc": "PLC-07",
+            "line": "Line-3",
+            "protocol": "OPC-UA",
+            "anomaly": "register_write_out_of_range",
+            "severity": "CRITICAL"
+          }
+        },
+        "supported_formats": ["CEF", "ECS", "OT JSON (Siemens OPC-UA)", "syslog", "free-text (LLM fallback)"]
+      }
+    },
+    {
+      "name": "t53.results",
+      "direction": "outbound",
+      "description": "ExecutionResult published after each event is fully processed by the pipeline. Consumed by T5.4 orchestration and monitoring systems.",
+      "producers": ["T53Pipeline (C5 post-execution)"],
+      "consumers": ["T5.4 Orchestration", "Monitoring / dashboards"],
+      "payload": {
+        "description": "Serialised ExecutionResult — see schemas/models/execution_result.schema.json",
+        "schema_ref": "../models/execution_result.schema.json"
+      }
+    },
+    {
+      "name": "dt.events.synthetic",
+      "direction": "inbound",
+      "description": "Synthetic events injected by WP3 STAM/D-VISOR for Digital Twin simulation. Processed identically to real events when simulation_mode=digital_twin.",
+      "producers": ["WP3 STAM", "WP3 D-VISOR"],
+      "consumers": ["C5 — Safety, Audit & Simulation (digital twin mode)"],
+      "payload": {
+        "description": "Same schema as pilot.events.raw; distinguished by topic only.",
+        "schema_ref": "topics.json#/topics/0/payload"
+      }
+    }
+  ]
+}

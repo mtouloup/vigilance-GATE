@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "GuardrailVerdict": {
+      "enum": [
+        "APPROVED",
+        "REJECTED",
+        "ESCALATE"
+      ],
+      "title": "GuardrailVerdict",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "check_id": {
+      "title": "Check Id",
+      "type": "string"
+    },
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/GuardrailVerdict"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    },
+    "ot_safety_checked": {
+      "default": false,
+      "title": "Ot Safety Checked",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "check_id",
+    "request_id",
+    "verdict",
+    "reasons"
+  ],
+  "title": "GuardrailCheck",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/guardrail_check.schema.json"
+}
