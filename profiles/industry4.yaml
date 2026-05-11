@@ -1,0 +1,15 @@
+sector: INDUSTRY_4
+pilot: Siemens_RO
+schema_extensions:
+  - { field: plc_id, type: string }
+  - { field: line_id, type: string }
+  - { field: scada_zone, type: string }
+  - { field: ot_protocol, type: string }
+  - { field: ot_safety_flag, type: bool, default: true }
+tool_plugins: [industrial_siem, ot_iam, scada_opcua]
+policy_templates: [zt_deny_it_to_ot, zt_conditional_scada]
+llm_system_prompt: "You are an industrial cybersecurity co-pilot (RAME). Focus on OT anomalies, PLC behaviour, IT/OT lateral movement. Always prefer safe-state over hard shutdown."
+ot_safety_flag: true
+confidence_threshold: 0.80
+protected_ranges:
+  - "10.0.0.0/8"

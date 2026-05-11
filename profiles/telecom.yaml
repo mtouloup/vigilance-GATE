@@ -1,0 +1,14 @@
+sector: TELECOM
+pilot: OTE_GR
+schema_extensions:
+  - { field: subscriber_id, type: string }
+  - { field: cell_id, type: string }
+  - { field: imsi, type: string }
+tool_plugins: [ote_siem, ote_iam, ote_ids]
+policy_templates: [zt_block_external, zt_revoke_session]
+llm_system_prompt: "You are a telecom SOC analyst. Focus on network access, SS7, BGP, credential attacks."
+ot_safety_flag: false
+confidence_threshold: 0.80
+protected_ranges:
+  - "10.0.0.0/8"
+  - "192.168.0.0/16"
