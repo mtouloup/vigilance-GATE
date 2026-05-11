@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: vigilance-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: vigilance
+      RABBITMQ_DEFAULT_PASS: vigilance
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  vigilance-telecom:
+    build: .
+    container_name: vigilance-telecom
+    environment:
+      VIGILANCE_SECTOR: TELECOM
+      AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+  vigilance-industry4:
+    build: .
+    container_name: vigilance-industry4
+    environment:
+      VIGILANCE_SECTOR: INDUSTRY_4
+      AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  rabbitmq_data:

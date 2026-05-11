@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from vigilance.broker.message_broker import MessageBroker
+from vigilance.broker import BaseBroker, create_broker
 from vigilance.components.c1_ingestion.normalizer import Normalizer
 from vigilance.components.c2_agentic.agent import AgentLoop
 from vigilance.components.c3_execution.executor import ActionExecutor
@@ -88,7 +88,7 @@ class T53Pipeline:
         )
 
         # Broker
-        self._broker = MessageBroker()
+        self._broker = create_broker()
 
         print(
             f"[T53Pipeline] Initialized: sector={self._profile.sector} "
@@ -232,7 +232,7 @@ class T53Pipeline:
         return self._audit
 
     @property
-    def broker(self) -> MessageBroker:
+    def broker(self) -> BaseBroker:
         """Access the message broker for inspection."""
         return self._broker
 
