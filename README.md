@@ -213,6 +213,16 @@ CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=23
 
 ---
 
+## Schemas
+
+Formal JSON Schema definitions for all data models and the broker integration interface live in [`schemas/`](schemas/README.md):
+
+- `schemas/models/` — `CanonicalEvent`, `ActionRequest`, `AgentDecision`, `ExecutionResult`, `GuardrailCheck`, `AuditRecord`
+- `schemas/broker/topics.json` — broker topics, directions, producers, consumers, payload formats
+- `schemas/profiles/sector_profile.schema.json` — sector profile YAML validation schema
+
+---
+
 ## Notes
 
 - All LLM responses are **stub/hardcoded** — no API keys required.

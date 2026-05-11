@@ -1,0 +1,47 @@
+{
+  "properties": {
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "plugin": {
+      "title": "Plugin",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    },
+    "latency_ms": {
+      "title": "Latency Ms",
+      "type": "integer"
+    },
+    "response_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Response Code"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "plugin",
+    "success",
+    "latency_ms"
+  ],
+  "title": "ActionResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/action_result.schema.json"
+}

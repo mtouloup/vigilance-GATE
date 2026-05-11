@@ -1,0 +1,50 @@
+{
+  "properties": {
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "pilot": {
+      "title": "Pilot",
+      "type": "string"
+    },
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "policy_update": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policy Update"
+    },
+    "agent_confidence": {
+      "title": "Agent Confidence",
+      "type": "number"
+    }
+  },
+  "required": [
+    "request_id",
+    "event_id",
+    "pilot",
+    "actions",
+    "agent_confidence"
+  ],
+  "title": "ActionRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/action_request.schema.json"
+}

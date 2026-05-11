@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "ActionResult": {
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "plugin": {
+          "title": "Plugin",
+          "type": "string"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        },
+        "latency_ms": {
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "response_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Code"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "plugin",
+        "success",
+        "latency_ms"
+      ],
+      "title": "ActionResult",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "request_id": {
+      "title": "Request Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "pilot": {
+      "title": "Pilot",
+      "type": "string"
+    },
+    "action_results": {
+      "items": {
+        "$ref": "#/$defs/ActionResult"
+      },
+      "title": "Action Results",
+      "type": "array"
+    },
+    "overall_success": {
+      "title": "Overall Success",
+      "type": "boolean"
+    },
+    "timestamp": {
+      "format": "date-time",
+      "title": "Timestamp",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_id",
+    "event_id",
+    "pilot",
+    "action_results",
+    "overall_success",
+    "timestamp"
+  ],
+  "title": "ExecutionResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/execution_result.schema.json"
+}

@@ -1,0 +1,48 @@
+{
+  "properties": {
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "threat_type": {
+      "title": "Threat Type",
+      "type": "string"
+    },
+    "recommended_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recommended Actions",
+      "type": "array"
+    },
+    "confidence": {
+      "title": "Confidence",
+      "type": "number"
+    },
+    "reasoning_turns": {
+      "title": "Reasoning Turns",
+      "type": "integer"
+    },
+    "pilot": {
+      "title": "Pilot",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision_id",
+    "event_id",
+    "threat_type",
+    "recommended_actions",
+    "confidence",
+    "reasoning_turns",
+    "pilot"
+  ],
+  "title": "AgentDecision",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vigilance-gate/schemas/models/agent_decision.schema.json"
+}
