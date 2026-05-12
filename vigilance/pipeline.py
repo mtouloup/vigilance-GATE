@@ -13,7 +13,7 @@ from vigilance.components.c5_safety.audit import AuditLog
 from vigilance.components.c5_safety.guardrail import SafetyGate
 from vigilance.components.c5_safety.simulation import SimulationMode
 from vigilance.components.c6_profiles.profile_manager import ProfileManager, SectorProfile
-from vigilance.llm.base import StubLLMProvider
+from vigilance.llm import create_llm
 from vigilance.models.action_request import ActionRequest
 from vigilance.models.execution_result import ActionResult, ExecutionResult
 from vigilance.models.guardrail_check import GuardrailVerdict
@@ -61,7 +61,7 @@ class T53Pipeline:
         self._profile: SectorProfile = self._profile_manager.load()
 
         # LLM
-        self._llm = StubLLMProvider()
+        self._llm = create_llm()
 
         # C1
         self._normalizer = Normalizer(self._llm)

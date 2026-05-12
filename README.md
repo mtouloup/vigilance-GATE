@@ -48,16 +48,21 @@ controlled by the `VIGILANCE_SECTOR` environment variable (default: `TELECOM`).
 **Message Broker** defaults to an in-memory broker for local/test use. Set `AMQP_URL` to connect
 to RabbitMQ in production.
 
+**LLM backend** defaults to the built-in stub provider (no dependencies, used for tests).
+Set `OLLAMA_BASE_URL` to connect to a real Ollama instance. The Docker stack includes Ollama
+and pulls the required models automatically.
+
 ---
 
 ## Quick Start — Docker (recommended)
 
-The full stack (RabbitMQ + both sector workers) runs with a single command.
+The full stack (RabbitMQ + Ollama + both sector workers) runs with a single command.
 
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) ≥ 24
 - [Docker Compose](https://docs.docker.com/compose/) v2 (bundled with Docker Desktop)
+- ~12 GB free disk space for LLM models (`mistral:7b` ≈ 4 GB, `mistral-nemo` ≈ 7 GB)
 
 ### Start the stack
 
@@ -65,15 +70,37 @@ The full stack (RabbitMQ + both sector workers) runs with a single command.
 docker compose up --build
 ```
 
-This starts three containers:
+On **first run** the `ollama-init` container downloads `mistral:7b` and `mistral-nemo`
+into the `ollama_data` Docker volume. Subsequent runs reuse the cached models instantly.
+
+This starts five containers:
 
 | Container | Role |
 |---|---|
 | `vigilance-rabbitmq` | RabbitMQ 3.13 message broker |
+| `vigilance-ollama` | Ollama LLM server (mistral:7b + mistral-nemo) |
+| `vigilance-ollama-init` | One-shot model downloader (exits after pull) |
 | `vigilance-telecom` | T5.3 pipeline — TELECOM sector (OTE/GR) |
 | `vigilance-industry4` | T5.3 pipeline — INDUSTRY_4 sector (Siemens/RO) |
 
-The service workers start only after RabbitMQ passes its healthcheck.
+Service workers start only after RabbitMQ is healthy **and** models are downloaded.
+
+### Reuse models already on your host
+
+If Ollama is installed locally and models are already in `~/.ollama`, skip the download entirely:
+
+```bash
+OLLAMA_MODELS_DIR=~/.ollama docker compose up --build
+```
+
+### GPU acceleration (NVIDIA)
+
+Uncomment the `deploy.resources` block in `docker-compose.yml` under the `ollama` service,
+then restart:
+
+```bash
+docker compose up --build
+```
 
 ### Send a test event
 
@@ -179,6 +206,8 @@ python -m vigilance.service
 |---|---|---|
 | `VIGILANCE_SECTOR` | `TELECOM` | Active sector profile: `TELECOM` or `INDUSTRY_4` |
 | `AMQP_URL` | *(unset)* | RabbitMQ connection URL. Unset = in-memory broker |
+| `OLLAMA_BASE_URL` | *(unset)* | Ollama API URL. Unset = stub LLM (for tests). Set to `http://localhost:11434` locally or `http://ollama:11434` in Docker |
+| `OLLAMA_MODELS_DIR` | `ollama_data` (Docker volume) | Host path to mount as Ollama model cache. Set to `~/.ollama` to reuse existing host models |
 
 ---
 
