@@ -1,13 +1,26 @@
 version: "3.9"
 
+# ── Model storage ──────────────────────────────────────────────────────────────
+# By default models are stored in the Docker-managed 'ollama_data' volume
+# (downloaded once, reused across restarts).
+#
+# If Ollama is already installed on your host and models live in ~/.ollama,
+# you can reuse them without re-downloading by setting OLLAMA_MODELS_DIR:
+#
+#   OLLAMA_MODELS_DIR=~/.ollama docker compose up
+#
+# That bind-mounts your host model cache instead of the Docker volume.
+# ──────────────────────────────────────────────────────────────────────────────
+
 services:
 
+  # ── RabbitMQ ────────────────────────────────────────────────────────────────
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: vigilance-rabbitmq
     ports:
       - "5672:5672"
-      - "15672:15672"   # management UI
+      - "15672:15672"   # management UI → http://localhost:15672 (vigilance/vigilance)
     environment:
       RABBITMQ_DEFAULT_USER: vigilance
       RABBITMQ_DEFAULT_PASS: vigilance
@@ -20,27 +33,82 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  # ── Ollama LLM server ────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: vigilance-ollama
+    ports:
+      - "11434:11434"   # Ollama REST API
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-ollama_data}:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+    # ── GPU (NVIDIA) — uncomment to enable GPU acceleration ──────────────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── Model initialiser (runs once, then exits) ────────────────────────────────
+  # Pulls mistral:7b and mistral-nemo if not already present in the volume.
+  # Both pulls are idempotent — re-running does not re-download existing models.
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: vigilance-ollama-init
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-ollama_data}:/root/.ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: >
+      sh -c "
+        echo 'Checking models...' &&
+        ollama pull mistral:7b &&
+        ollama pull mistral-nemo &&
+        echo 'Models ready.'
+      "
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # ── T5.3 worker — TELECOM sector (OTE / Greece) ──────────────────────────────
   vigilance-telecom:
     build: .
     container_name: vigilance-telecom
     environment:
       VIGILANCE_SECTOR: TELECOM
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       rabbitmq:
         condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     restart: on-failure
 
+  # ── T5.3 worker — INDUSTRY_4 sector (Siemens / Romania) ─────────────────────
   vigilance-industry4:
     build: .
     container_name: vigilance-industry4
     environment:
       VIGILANCE_SECTOR: INDUSTRY_4
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       rabbitmq:
         condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     restart: on-failure
 
 volumes:
   rabbitmq_data:
+  ollama_data:
