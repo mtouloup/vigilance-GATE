@@ -77,7 +77,7 @@ This starts five containers:
 
 | Container | Role |
 |---|---|
-| `vigilance-rabbitmq` | RabbitMQ 3.13 message broker |
+| `vigilance-rabbitmq` | RabbitMQ 3.13 — queues pre-declared at startup via `infra/rabbitmq/definitions.json` |
 | `vigilance-ollama` | Ollama LLM server (mistral:7b + mistral-nemo) |
 | `vigilance-ollama-init` | One-shot model downloader (exits after pull) |
 | `vigilance-telecom` | T5.3 pipeline — TELECOM sector (OTE/GR) |

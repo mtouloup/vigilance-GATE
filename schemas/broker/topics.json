@@ -13,7 +13,9 @@
     },
     "queue_config": {
       "durable": true,
-      "delivery_mode": 2
+      "delivery_mode": 2,
+      "pre_declared": true,
+      "declaration_source": "infra/rabbitmq/definitions.json"
     }
   },
   "topics": [
