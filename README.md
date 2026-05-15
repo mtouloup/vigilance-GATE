@@ -92,7 +92,7 @@ is identical for all sectors — what changes is the Sector Profile (C6) and the
 
 Both models are served by **Ollama** and downloaded once into a persistent Docker volume.
 When `OLLAMA_BASE_URL` is not set (local/test mode) the built-in `StubLLMProvider` is used instead —
-no model download required, all 73 tests run offline.
+no model download required, all tests run offline.
 
 ---
 
@@ -228,15 +228,52 @@ Then restart with `docker compose up --build`.
 own log-shipping integration. It wraps the raw event and publishes it via the RabbitMQ
 Management HTTP API (no AMQP client library required — just `curl`).
 
+**Pilot #1 — OTE / TELECOM (Greece)**
 ```bash
-# OTE brute-force alert (CEF string)
+# Credential stuffing / brute-force alert (CEF format)
 ./tools/publish_event.sh \
   'CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH'
 
-# Siemens OT anomaly (JSON object — wrapped automatically as {"raw": {...}})
+# SS7 signaling anomaly (syslog format)
+./tools/publish_event.sh \
+  'Jan 15 03:22:11 ss7gw-01 SS7GW: ALERT src_gt=491760000000 dst=nms-01 msg_type=SRI_SM anomaly=location_tracking_attempt severity=HIGH'
+```
+
+**Pilot #2 — Port of Rotterdam / MARITIME (Netherlands)**
+```bash
+# AIS position spoofing (JSON format)
+./tools/publish_event.sh \
+  '{"vessel_id":"VESSEL-042","ais_mmsi":"244820000","port_zone":"Berth-7","anomaly":"ais_position_spoofing","severity":"HIGH"}'
+
+# Cargo system intrusion (JSON format)
+./tools/publish_event.sh \
+  '{"vessel_id":"VESSEL-117","cargo_system_id":"CMS-ROT-04","port_zone":"Container-Terminal-A","anomaly":"unauthorized_cargo_manifest_access","severity":"CRITICAL"}'
+```
+
+**Pilot #3 — CaixaBank / FINANCE (Spain)**
+```bash
+# Account takeover attempt (JSON format)
+./tools/publish_event.sh \
+  '{"account_id":"ACC-ES-0099182","transaction_id":"TXN-2026-887341","branch_id":"BCN-CENTRAL","anomaly":"account_takeover_attempt","fraud_score":0.94,"severity":"HIGH"}'
+
+# High-value payment fraud (JSON format)
+./tools/publish_event.sh \
+  '{"account_id":"ACC-ES-0041872","transaction_id":"TXN-2026-553901","branch_id":"MAD-NORTE","anomaly":"payment_fraud_high_value","fraud_score":0.91,"severity":"CRITICAL"}'
+```
+
+**Pilot #4 — Siemens / INDUSTRY_4 (Romania)**
+```bash
+# OT anomaly — OPC-UA register write out of range (JSON format)
 ./tools/publish_event.sh \
   '{"plc":"PLC-07","line":"Line-3","protocol":"OPC-UA","anomaly":"register_write_out_of_range","severity":"CRITICAL"}'
 
+# PLC lateral movement suspected (JSON format)
+./tools/publish_event.sh \
+  '{"plc":"PLC-12","scada_zone":"Zone-B","protocol":"Modbus","anomaly":"unexpected_command_sequence","severity":"HIGH","ot_safety_flag":true}'
+```
+
+**Common options:**
+```bash
 # Point at a remote RabbitMQ instance
 ./tools/publish_event.sh -h broker.example.com -u myuser -P mypass \
   'CEF:0|OTE-IDS|SOCv3|2.0|100|AUTH_FAIL|5|src=10.1.2.3 dst=nms-02 cnt=10 app=SSH'
@@ -250,14 +287,32 @@ Run `./tools/publish_event.sh --help` for the full option reference.
 
 #### Option B — rabbitmqadmin (inside the running broker container)
 
+**Pilot #1 — OTE / TELECOM**
 ```bash
-# OTE credential-stuffing alert (CEF format)
 docker exec vigilance-rabbitmq \
   rabbitmqadmin publish exchange=amq.default \
     routing_key=pilot.events.raw \
     payload='{"raw":"CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"}'
+```
 
-# Siemens OT anomaly (JSON format)
+**Pilot #2 — Port of Rotterdam / MARITIME**
+```bash
+docker exec vigilance-rabbitmq \
+  rabbitmqadmin publish exchange=amq.default \
+    routing_key=pilot.events.raw \
+    payload='{"raw":{"vessel_id":"VESSEL-042","ais_mmsi":"244820000","port_zone":"Berth-7","anomaly":"ais_position_spoofing","severity":"HIGH"}}'
+```
+
+**Pilot #3 — CaixaBank / FINANCE**
+```bash
+docker exec vigilance-rabbitmq \
+  rabbitmqadmin publish exchange=amq.default \
+    routing_key=pilot.events.raw \
+    payload='{"raw":{"account_id":"ACC-ES-0099182","transaction_id":"TXN-2026-887341","branch_id":"BCN-CENTRAL","anomaly":"account_takeover_attempt","fraud_score":0.94,"severity":"HIGH"}}'
+```
+
+**Pilot #4 — Siemens / INDUSTRY_4**
+```bash
 docker exec vigilance-rabbitmq \
   rabbitmqadmin publish exchange=amq.default \
     routing_key=pilot.events.raw \
@@ -490,6 +545,59 @@ unknown device followed by high-value transaction attempt.
 in regulated financial environments (PSD2, DORA).
 
 **Audit ID:** `aud-CAI-0001`
+
+---
+
+## LLM Usage in T5.3
+
+This section documents exactly where and how the Agentic Wrapper Framework uses the
+two LLM models, in fulfilment of the GA promises for T5.3.
+
+### Where LLMs are used
+
+| Component | Model | When invoked | What it does |
+|---|---|---|---|
+| **C1 — Ingestion** | `mistral:7b` | When CEF/ECS/syslog parsers cannot parse the raw event | Extracts all CanonicalEvent fields (type, severity, pilot, src_ip, target, vessel_id, account_id, etc.) from arbitrary free-text or unknown log formats |
+| **C2 — Agentic Loop** | `mistral-nemo` | Every event | Multi-turn tool-calling loop: calls `query_siem_logs`, `query_iam_sessions`, `query_threat_intel` in sequence, then produces the final `AgentDecision` (threat type + proposed actions + confidence score) |
+| **C3 — Policy Execution** | `mistral-nemo` | When NL→Rego translation is needed | Translates natural-language action descriptions into OPA/Rego policy rules for ZTA enforcement |
+| **C5 — Safety Gate** | `mistral:7b` | When a rule-based guardrail check returns ESCALATE | Semantic second-opinion review: given the proposed actions and the guardrail flags, decides APPROVE or REJECT. Upgrades ESCALATE→APPROVED when proportionate, keeps ESCALATE or downgrades to REJECTED otherwise |
+
+### LLM call chain per event (STANDALONE mode)
+
+```
+Raw event arrives
+      │
+      ▼
+C1 ──[mistral:7b, only if needed]──► extract_fields(raw_text, fields) → CanonicalEvent
+      │
+      ▼
+C2 ──[mistral-nemo, turn 1]──► tool_call: query_siem_logs(target, window_min)
+   ──[mistral-nemo, turn 2]──► tool_call: query_iam_sessions(target)
+   ──[mistral-nemo, turn 3]──► decision: {threat, actions, confidence}
+      │
+      ▼
+C3 ──[mistral-nemo, only if NL→Rego needed]──► generate_rego_policy(nl_description)
+      │
+      ▼
+C5 ──[rule checks: confidence / IP range / proportionality / OT safety]
+   ──[mistral:7b, only if ESCALATE]──► semantic_check(context, proposed_actions) → APPROVE|REJECT
+```
+
+### What is guaranteed (GA promises fulfilled)
+
+- **mistral:7b in C1**: The `LLMParser` fallback calls `llm.extract_fields()` which routes to the fast model. This handles free-text alerts, unknown SIEM formats, and future pilot log schemas without schema changes.
+- **mistral-nemo in C2**: `AgentLoop` calls `llm.complete()` in a multi-turn loop (up to 10 turns, configurable). Each turn the model either calls a tool or produces a final decision. The RAME co-pilot integration for INDUSTRY_4 is provided via the sector-specific C2 system prompt in `profiles/industry4.yaml`.
+- **mistral:7b in C5 semantic guardrail**: `SafetyGate._semantic_review()` calls `llm.semantic_check()` using the fast model for borderline cases — not the heavy reasoning model — keeping latency low for the most time-sensitive path.
+- **mistral-nemo in C3 NL→Rego**: `PolicyTranslator` calls `llm.complete()` to generate OPA/Rego policy rules for ZTA enforcement, triggered when the AgentDecision includes a `policy_update` field.
+
+### Offline / test mode
+
+When `OLLAMA_BASE_URL` is not set, the framework uses `StubLLMProvider` automatically:
+- `complete()` → deterministic multi-turn responses ending in a sector-appropriate decision
+- `semantic_check()` → always returns `APPROVE` with a proportionality justification
+- `extract_fields()` → heuristic extraction from keywords in the raw text
+
+No LLM server required. All tests pass offline with the stub provider.
 
 ---
 

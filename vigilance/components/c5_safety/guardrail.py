@@ -1,12 +1,24 @@
 """C5 Safety Gate — pre-execution guardrail checks."""
 from __future__ import annotations
 import ipaddress
+import json
+import logging
 import uuid
 
 from vigilance.llm.base import LLMProvider
 from vigilance.models.action_request import ActionRequest
 from vigilance.models.canonical_event import CanonicalEvent
 from vigilance.models.guardrail_check import GuardrailCheck, GuardrailVerdict
+
+logger = logging.getLogger(__name__)
+
+_SEMANTIC_SYSTEM = (
+    "You are a cybersecurity safety reviewer for the VIGILANCE framework. "
+    "A rule-based guardrail has flagged an automated response action as borderline. "
+    "Review the proposed actions and decide whether they are proportionate and safe to execute. "
+    "Respond with JSON only: "
+    '{"semantic_verdict": "APPROVE"|"REJECT", "reason": "<one sentence>"}'
+)
 
 
 class SafetyGate:
@@ -98,7 +110,8 @@ class SafetyGate:
         if rejected:
             verdict = GuardrailVerdict.REJECTED
         elif escalate:
-            verdict = GuardrailVerdict.ESCALATE
+            # Borderline case — ask the fast LLM (mistral:7b) for a semantic second opinion
+            verdict = self._semantic_review(request, event, reasons, llm)
         else:
             verdict = GuardrailVerdict.APPROVED
             if not reasons:
@@ -111,3 +124,40 @@ class SafetyGate:
             reasons=reasons,
             ot_safety_checked=ot_safety_checked,
         )
+
+    def _semantic_review(
+        self,
+        request: ActionRequest,
+        event: CanonicalEvent,
+        reasons: list[str],
+        llm: LLMProvider,
+    ) -> GuardrailVerdict:
+        """Call mistral:7b for a semantic review of borderline guardrail cases.
+
+        Upgrades ESCALATE → APPROVED when the LLM deems actions proportionate,
+        or keeps ESCALATE / downgrades to REJECTED on explicit rejection.
+        """
+        user_message = {
+            "role": "user",
+            "content": (
+                f"Event type: {event.type}, severity: {event.severity}, "
+                f"pilot: {event.pilot}\n"
+                f"Proposed actions: {request.actions}\n"
+                f"Guardrail flags: {reasons}\n"
+                "Are these actions proportionate and safe to execute?"
+            ),
+        }
+        try:
+            raw = llm.semantic_check(_SEMANTIC_SYSTEM, [user_message])
+            result = json.loads(raw)
+            semantic_verdict = result.get("semantic_verdict", "").upper()
+            llm_reason = result.get("reason", "LLM semantic review completed")
+            reasons.append(f"Semantic review ({semantic_verdict}): {llm_reason}")
+            if semantic_verdict == "APPROVE":
+                return GuardrailVerdict.APPROVED
+            elif semantic_verdict == "REJECT":
+                return GuardrailVerdict.REJECTED
+        except Exception as exc:
+            logger.warning(f"Semantic review failed, keeping ESCALATE: {exc}")
+            reasons.append("Semantic review unavailable — escalating to SOC analyst")
+        return GuardrailVerdict.ESCALATE

@@ -12,6 +12,8 @@ _CANONICAL_FIELDS = [
     "src_ip", "target", "count", "nodes_affected",
     "subscriber_id", "cell_id", "imsi",
     "plc_id", "line_id", "scada_zone", "ot_protocol", "ot_safety_flag",
+    "vessel_id", "port_zone", "ais_mmsi", "cargo_system_id",
+    "account_id", "transaction_id", "branch_id", "fraud_score",
     "timestamp",
 ]
 
@@ -57,14 +59,26 @@ class LLMParser:
             target=fields.get("target"),
             count=fields.get("count"),
             nodes_affected=fields.get("nodes_affected"),
+            # TELECOM
             subscriber_id=fields.get("subscriber_id"),
             cell_id=fields.get("cell_id"),
             imsi=fields.get("imsi"),
+            # INDUSTRY_4
             plc_id=fields.get("plc_id"),
             line_id=fields.get("line_id"),
             scada_zone=fields.get("scada_zone"),
             ot_protocol=fields.get("ot_protocol"),
             ot_safety_flag=bool(fields.get("ot_safety_flag", False)),
+            # MARITIME
+            vessel_id=fields.get("vessel_id"),
+            port_zone=fields.get("port_zone"),
+            ais_mmsi=fields.get("ais_mmsi"),
+            cargo_system_id=fields.get("cargo_system_id"),
+            # FINANCE
+            account_id=fields.get("account_id"),
+            transaction_id=fields.get("transaction_id"),
+            branch_id=fields.get("branch_id"),
+            fraud_score=fields.get("fraud_score"),
             raw_payload={"llm_parsed": True, "raw": raw_text[:500]},
             timestamp=timestamp,
         )

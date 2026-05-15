@@ -26,8 +26,10 @@ Available tools:
 When you have enough information to decide:
   {"decision": "<THREAT_TYPE>", "actions": ["<action1>", ...], "confidence": <0.0-1.0>}
 
-Valid actions (TELECOM):  block_ip, revoke_session, notify_soc, update_acl
+Valid actions (TELECOM):    block_ip, revoke_session, notify_soc, update_acl
 Valid actions (INDUSTRY_4): isolate_plc, revoke_ot_session, notify_soc, update_zt_policy
+Valid actions (MARITIME):   block_vessel_access, quarantine_cargo_system, notify_port_authority, notify_soc, update_vessel_acl
+Valid actions (FINANCE):    freeze_account, block_transaction, notify_fraud_team, escalate_to_compliance, notify_soc
 """
 
 _EXTRACT_FIELDS_INSTRUCTION = """
@@ -77,6 +79,19 @@ class OllamaLLMProvider:
         """
         augmented_system = system_prompt + _AGENTIC_JSON_INSTRUCTION
         return self._chat(self.reasoning_model, augmented_system, messages)
+
+    def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
+        """Run a semantic guardrail review using the fast model (mistral:7b).
+
+        Called by C5 SafetyGate for borderline/ESCALATE cases to obtain a
+        second-opinion verdict before halting automated execution.
+        """
+        semantic_system = (
+            system_prompt
+            + "\n\nRESPONSE FORMAT: respond with valid JSON only.\n"
+            '{"semantic_verdict": "APPROVE"|"REJECT", "reason": "<short explanation>"}'
+        )
+        return self._chat(self.fast_model, semantic_system, messages)
 
     def extract_fields(self, raw_text: str, fields: list[str]) -> dict:
         """Extract structured fields from raw text using the fast model (mistral:7b).
