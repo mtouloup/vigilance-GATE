@@ -15,8 +15,13 @@ from vigilance.components.c5_safety.simulation import SimulationMode
 from vigilance.components.c6_profiles.profile_manager import ProfileManager, SectorProfile
 from vigilance.llm import create_llm
 from vigilance.models.action_request import ActionRequest
+from vigilance.models.canonical_event import CanonicalEvent
 from vigilance.models.execution_result import ActionResult, ExecutionResult
 from vigilance.models.guardrail_check import GuardrailVerdict
+
+TOPIC_CANONICAL_EVENTS = "t53.canonical_events"
+TOPIC_ACTION_REQUESTS  = "t53.action_requests"
+TOPIC_RESULTS          = "t53.results"
 
 
 def _build_telecom_adapters() -> dict[str, ToolAdapter]:
@@ -58,14 +63,13 @@ def _build_finance_adapters() -> dict[str, ToolAdapter]:
 class T53Pipeline:
     """Main processing pipeline that orchestrates all T5.3 components.
 
-    Flow:
-    1. C6: Load sector profile
-    2. C1: Normalize raw event → CanonicalEvent
-    3. C2: Agentic reasoning → AgentDecision
-    4. C5: Guardrail check → GuardrailCheck
-    5. C3+C4: Execute actions → ExecutionResult (if APPROVED/ESCALATE w/ human approval)
-    6. C5: Close audit record
-    7. Broker: Publish result to t53.results
+    STANDALONE mode (default):
+      pilot.events.raw → C1 → C2 → C5 → C3+C4 → t53.results
+      Also publishes CanonicalEvent to t53.canonical_events for observability.
+
+    INTEGRATED mode (VIGILANCE_MODE=INTEGRATED):
+      pilot.events.raw → C1 → t53.canonical_events  (T5.4 takes over)
+      t53.action_requests  → C5 → C3+C4 → t53.results  (T5.4 dispatches back)
     """
 
     def __init__(
@@ -73,7 +77,10 @@ class T53Pipeline:
         sector: str | None = None,
         simulation_mode: bool = False,
         dry_run: bool = False,
+        mode: str = "STANDALONE",
     ) -> None:
+        self._mode = mode.upper()
+
         # C6 — load profile
         self._profile_manager = ProfileManager(sector=sector)
         self._profile: SectorProfile = self._profile_manager.load()
@@ -84,7 +91,7 @@ class T53Pipeline:
         # C1
         self._normalizer = Normalizer(self._llm)
 
-        # C2
+        # C2 (used in STANDALONE only)
         self._agent = AgentLoop()
 
         # C3
@@ -100,6 +107,9 @@ class T53Pipeline:
         builder = _adapter_builders.get(self._profile.sector, _build_telecom_adapters)
         self._adapters = builder()
 
+        # Event cache for INTEGRATED mode: event_id → CanonicalEvent
+        self._event_cache: dict[str, CanonicalEvent] = {}
+
         # C5
         self._guardrail = SafetyGate()
         self._audit = AuditLog()
@@ -114,18 +124,25 @@ class T53Pipeline:
         print(
             f"[T53Pipeline] Initialized: sector={self._profile.sector} "
             f"pilot={self._profile.pilot} "
+            f"mode={self._mode} "
             f"simulation={self._simulation}"
         )
 
     def process_event(self, raw_event: str | dict) -> ExecutionResult:
-        """Process a raw event through the full T5.3 pipeline.
+        """Process a raw event — routes to standalone or integrated mode.
 
-        Args:
-            raw_event: Raw event string (CEF, syslog) or dict (ECS, OT JSON).
-
-        Returns:
-            ExecutionResult with all action outcomes.
+        In STANDALONE mode runs the full C1→C2→C5→C3→C4 pipeline.
+        In INTEGRATED mode runs C1 only and publishes CanonicalEvent for T5.4.
         """
+        if self._mode == "INTEGRATED":
+            self.ingest_event(raw_event)
+            return None  # T5.4 will dispatch the ActionRequest separately
+        return self._run_standalone(raw_event)
+
+    # ── STANDALONE: full internal pipeline ────────────────────────────────────
+
+    def _run_standalone(self, raw_event: str | dict) -> ExecutionResult:
+        """STANDALONE full pipeline: C1 → C2 → C5 → C3+C4 → publish result."""
         profile = self._profile
 
         # --- C1: Normalize ---
@@ -136,6 +153,9 @@ class T53Pipeline:
             f"type={event.type} severity={event.severity} pilot={event.pilot}"
         )
 
+        # Publish CanonicalEvent for observability (T5.4 can subscribe even in STANDALONE)
+        self._broker.publish(TOPIC_CANONICAL_EVENTS, event.model_dump(mode="json"))
+
         # --- C2: Agentic reasoning ---
         print("[T53Pipeline] C2: Running agentic loop...")
         decision = self._agent.run(event, profile, self._llm)
@@ -145,7 +165,6 @@ class T53Pipeline:
             f"actions={decision.recommended_actions}"
         )
 
-        # Build ActionRequest
         request = ActionRequest(
             request_id=str(uuid.uuid4()),
             event_id=event.event_id,
@@ -158,7 +177,78 @@ class T53Pipeline:
             agent_confidence=decision.confidence,
         )
 
-        # Open audit record
+        return self._guardrail_and_execute(request, event)
+
+    # ── INTEGRATED: C1 ingestion half ─────────────────────────────────────────
+
+    def ingest_event(self, raw_event: str | dict) -> CanonicalEvent:
+        """INTEGRATED mode — C1 only.
+
+        Normalises the raw event, caches it by event_id, and publishes the
+        CanonicalEvent to t53.canonical_events for T5.4 to consume.
+        T5.4 will call T5.1 (RAG) and T5.2 (agent catalogue), then dispatch
+        an ActionRequest back to t53.action_requests.
+        """
+        profile = self._profile
+        print("[T53Pipeline][INTEGRATED] C1: Normalizing event...")
+        event = self._normalizer.normalize(raw_event, profile)
+        print(
+            f"[T53Pipeline][INTEGRATED] C1 → event_id={event.event_id} "
+            f"type={event.type} severity={event.severity} pilot={event.pilot}"
+        )
+
+        self._event_cache[event.event_id] = event
+        self._broker.publish(TOPIC_CANONICAL_EVENTS, event.model_dump(mode="json"))
+        print(
+            f"[T53Pipeline][INTEGRATED] CanonicalEvent published → "
+            f"{TOPIC_CANONICAL_EVENTS} (awaiting ActionRequest from T5.4)"
+        )
+        return event
+
+    # ── INTEGRATED: C5+C3+C4 execution half ───────────────────────────────────
+
+    def execute_action_request(self, action_request_dict: dict) -> ExecutionResult:
+        """INTEGRATED mode — receives ActionRequest dispatched by T5.4.
+
+        Looks up the original CanonicalEvent from the cache (by event_id),
+        runs the C5 guardrail, executes via C3+C4, and publishes the
+        ExecutionResult to t53.results.
+        """
+        request = ActionRequest(**action_request_dict)
+        print(
+            f"[T53Pipeline][INTEGRATED] ActionRequest received from T5.4: "
+            f"event_id={request.event_id} actions={request.actions} "
+            f"confidence={request.agent_confidence:.2f}"
+        )
+
+        # Retrieve the CanonicalEvent stored during ingest_event()
+        event = self._event_cache.get(request.event_id)
+        if event is None:
+            # Fallback: reconstruct a minimal CanonicalEvent from the request
+            from datetime import timezone
+            event = CanonicalEvent(
+                event_id=request.event_id,
+                type="UNKNOWN",
+                pilot=request.pilot,
+                severity="HIGH",
+                timestamp=datetime.now(timezone.utc),
+            )
+            print(
+                f"[T53Pipeline][INTEGRATED] WARNING: event_id={request.event_id} "
+                "not in cache — using minimal CanonicalEvent"
+            )
+
+        return self._guardrail_and_execute(request, event)
+
+    # ── Shared: guardrail + execution (used by both modes) ────────────────────
+
+    def _guardrail_and_execute(
+        self,
+        request: ActionRequest,
+        event: CanonicalEvent,
+    ) -> ExecutionResult:
+        profile = self._profile
+
         audit_id = self._audit.open_record(
             pilot_id=profile.pilot,
             event_id=event.event_id,
@@ -178,7 +268,6 @@ class T53Pipeline:
         # --- C3+C4: Execute ---
         if guardrail.verdict == GuardrailVerdict.REJECTED:
             print("[T53Pipeline] C5: REJECTED — skipping execution")
-            # Return a no-op result
             result = ExecutionResult(
                 request_id=request.request_id,
                 event_id=event.event_id,
@@ -208,13 +297,10 @@ class T53Pipeline:
             f"actions={[r.action for r in result.action_results]}"
         )
 
-        # --- C5: Close audit ---
         self._audit.close_record(audit_id, result, guardrail)
         print(f"[T53Pipeline] C5: Audit record closed: {audit_id}")
 
-        # Publish result
-        self._broker.publish("t53.results", result.model_dump(mode="json"))
-
+        self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
         return result
 
     def _dry_run_result(

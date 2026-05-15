@@ -95,6 +95,7 @@ services:
     container_name: vigilance-gate
     environment:
       VIGILANCE_SECTOR: ${VIGILANCE_SECTOR:-TELECOM}
+      VIGILANCE_MODE: ${VIGILANCE_MODE:-STANDALONE}
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
       OLLAMA_BASE_URL: http://ollama:11434
     depends_on:

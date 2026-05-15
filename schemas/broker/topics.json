@@ -54,6 +54,28 @@
       }
     },
     {
+      "name": "t53.canonical_events",
+      "direction": "outbound",
+      "description": "CanonicalEvent published by T5.3 C1 after normalisation. In INTEGRATED mode T5.4 consumes this to call T5.1 RAG and T5.2 agent catalogue, then dispatches an ActionRequest back via t53.action_requests. Also published in STANDALONE mode for observability.",
+      "producers": ["T53Pipeline — C1 post-normalisation"],
+      "consumers": ["T5.4 Orchestration (INTEGRATED mode)", "Monitoring / dashboards"],
+      "payload": {
+        "description": "Serialised CanonicalEvent — see schemas/models/canonical_event.schema.json",
+        "schema_ref": "../models/canonical_event.schema.json"
+      }
+    },
+    {
+      "name": "t53.action_requests",
+      "direction": "inbound",
+      "description": "ActionRequest dispatched by T5.4 to T5.3 after agent selection (INTEGRATED mode only). T5.3 runs C5 guardrail and C3+C4 execution on receipt.",
+      "producers": ["T5.4 Orchestration (INTEGRATED mode)"],
+      "consumers": ["T53Pipeline — C5+C3+C4 execution half (INTEGRATED mode)"],
+      "payload": {
+        "description": "Serialised ActionRequest — see schemas/models/action_request.schema.json",
+        "schema_ref": "../models/action_request.schema.json"
+      }
+    },
+    {
       "name": "dt.events.synthetic",
       "direction": "inbound",
       "description": "Synthetic events injected by WP3 STAM/D-VISOR for Digital Twin simulation. Processed identically to real events when simulation_mode=digital_twin.",
