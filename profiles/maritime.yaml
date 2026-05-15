@@ -1,0 +1,21 @@
+sector: MARITIME
+pilot: Rotterdam_NL
+schema_extensions:
+  - { field: vessel_id,       type: string }
+  - { field: port_zone,       type: string }
+  - { field: ais_mmsi,        type: string }
+  - { field: cargo_system_id, type: string }
+tool_plugins: [port_siem, port_iam, port_ops]
+policy_templates: [zt_deny_vessel_access, zt_quarantine_cargo, zt_isolate_port_zone]
+llm_system_prompt: >
+  You are a maritime cybersecurity analyst for the Port of Rotterdam.
+  Focus on: vessel tracking integrity (AIS/GPS spoofing), cargo system intrusions,
+  port IT/OT lateral movement, and physical access anomalies.
+  Always prefer operational continuity — vessel isolation must be scoped to the
+  affected berth or cargo zone, not the entire port network.
+ot_safety_flag: false
+confidence_threshold: 0.80
+protected_ranges:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"

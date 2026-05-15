@@ -23,4 +23,14 @@ class CanonicalEvent(BaseModel):
     scada_zone: str | None = None
     ot_protocol: str | None = None  # OPC-UA | Modbus
     ot_safety_flag: bool = False
+    # MARITIME extensions (Port of Rotterdam)
+    vessel_id: str | None = None
+    port_zone: str | None = None
+    ais_mmsi: str | None = None        # AIS vessel identifier
+    cargo_system_id: str | None = None
+    # FINANCE extensions (CaixaBank)
+    account_id: str | None = None
+    transaction_id: str | None = None
+    branch_id: str | None = None
+    fraud_score: float | None = None   # 0.0–1.0
     timestamp: datetime
