@@ -123,6 +123,8 @@ vigilance-GATE/
 │   ├── models/                 Auto-generated from Pydantic models
 │   ├── broker/topics.json      Broker integration interface spec
 │   └── profiles/               Sector profile YAML schema
+├── tools/
+│   └── publish_event.sh        Example producer script for pilot partners
 ├── infra/
 │   └── rabbitmq/
 │       ├── rabbitmq.conf       Loads definitions at broker startup
@@ -203,7 +205,33 @@ Then restart with `docker compose up --build`.
 
 ### Send a test event
 
-Publish to the `pilot.events.raw` queue — the appropriate sector worker will pick it up:
+#### Option A — example producer script (recommended for pilot partners)
+
+`tools/publish_event.sh` is the reference producer that pilot partners can adapt into their
+own log-shipping integration. It wraps the raw event and publishes it via the RabbitMQ
+Management HTTP API (no AMQP client library required — just `curl`).
+
+```bash
+# OTE brute-force alert (CEF string)
+./tools/publish_event.sh \
+  'CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH'
+
+# Siemens OT anomaly (JSON object — wrapped automatically as {"raw": {...}})
+./tools/publish_event.sh \
+  '{"plc":"PLC-07","line":"Line-3","protocol":"OPC-UA","anomaly":"register_write_out_of_range","severity":"CRITICAL"}'
+
+# Point at a remote RabbitMQ instance
+./tools/publish_event.sh -h broker.example.com -u myuser -P mypass \
+  'CEF:0|OTE-IDS|SOCv3|2.0|100|AUTH_FAIL|5|src=10.1.2.3 dst=nms-02 cnt=10 app=SSH'
+
+# Inject a WP3 D-VISOR synthetic event into the Digital Twin queue
+./tools/publish_event.sh -q dt.events.synthetic \
+  '{"plc":"PLC-01","anomaly":"voltage_spike","severity":"HIGH"}'
+```
+
+Run `./tools/publish_event.sh --help` for the full option reference.
+
+#### Option B — rabbitmqadmin (inside the running broker container)
 
 ```bash
 # OTE credential-stuffing alert (CEF format)
