@@ -7,13 +7,23 @@ class LLMProvider(ABC):
 
     @abstractmethod
     def complete(self, system_prompt: str, messages: list[dict]) -> str:
-        """Send a chat completion request and return the response text."""
+        """Send a chat completion request using the reasoning model."""
+        ...
+
+    @abstractmethod
+    def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
+        """Send a semantic review request using the fast model (mistral:7b).
+
+        Used by C5 SafetyGate for ambiguous/borderline guardrail cases.
+        """
         ...
 
     @abstractmethod
     def extract_fields(self, raw_text: str, fields: list[str]) -> dict:
-        """Extract structured fields from raw text."""
+        """Extract structured fields from raw text using the fast model."""
         ...
+
+
 
 
 class StubLLMProvider(LLMProvider):
@@ -52,11 +62,21 @@ class StubLLMProvider(LLMProvider):
         '"confidence": 0.93}'
     )
 
+    # Stub semantic guardrail response (C5)
+    _SEMANTIC_APPROVE = (
+        '{"semantic_verdict": "APPROVE", '
+        '"reason": "Actions are proportionate and necessary for detected threat type"}'
+    )
+
     # Stub OPA/Rego policy
     _REGO_STUB = (
         'package vigilance.policy\n\ndefault allow = false\n\n'
         'allow {\n    input.action == "block_ip"\n    input.src_ip != ""\n}\n'
     )
+
+    def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
+        """Return stub semantic approval for guardrail borderline cases."""
+        return self._SEMANTIC_APPROVE
 
     def complete(self, system_prompt: str, messages: list[dict]) -> str:
         """Return a deterministic stub response based on context keywords."""
