@@ -128,9 +128,6 @@ class T53Pipeline:
         """
         profile = self._profile
 
-        # Publish raw event to broker
-        self._broker.publish("pilot.events.raw", {"raw": str(raw_event)[:500]})
-
         # --- C1: Normalize ---
         print("[T53Pipeline] C1: Normalizing event...")
         event = self._normalizer.normalize(raw_event, profile)
