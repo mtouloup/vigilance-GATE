@@ -369,9 +369,59 @@ pipeline = T53Pipeline(sector="INDUSTRY_4", simulation_mode=True)
 | Variable | Default | Description |
 |---|---|---|
 | `VIGILANCE_SECTOR` | `TELECOM` | Active sector profile: `TELECOM` \| `MARITIME` \| `FINANCE` \| `INDUSTRY_4` |
+| `VIGILANCE_MODE` | `STANDALONE` | Pipeline mode: `STANDALONE` or `INTEGRATED` (see below) |
 | `AMQP_URL` | *(unset)* | RabbitMQ AMQP URL. Unset → in-memory broker (tests/local) |
 | `OLLAMA_BASE_URL` | *(unset)* | Ollama API URL. Unset → StubLLMProvider (tests/local). Docker: `http://ollama:11434` |
 | `OLLAMA_MODELS_DIR` | `ollama_data` (volume) | Override to bind-mount host model cache (e.g. `~/.ollama`) and skip download |
+
+---
+
+## Pipeline Modes
+
+### STANDALONE (default)
+
+The full pipeline runs inside `vigilance-gate`: C1 → C2 → C5 → C3+C4.
+C2 uses Mistral Nemo 12B for internal agentic reasoning and produces the ActionRequest itself.
+The CanonicalEvent is also published to `t53.canonical_events` for observability.
+
+```bash
+VIGILANCE_MODE=STANDALONE docker compose up --build
+```
+
+```
+pilot.events.raw ──► C1 normalize ──► C2 reason ──► C5 guardrail ──► C3+C4 execute ──► t53.results
+                                       │
+                                       └──► t53.canonical_events  (observability)
+```
+
+### INTEGRATED (WP5 full workflow)
+
+T5.3 handles only ingestion (C1) and execution (C5+C3+C4).
+T5.4 (orchestrator, lead: GFT) sits in the middle: it consumes CanonicalEvents,
+calls T5.1 RAG for threat context, selects the right agent from T5.2, and dispatches
+the ActionRequest back to T5.3 for guardrail + execution.
+
+```bash
+VIGILANCE_MODE=INTEGRATED docker compose up --build
+```
+
+```
+pilot.events.raw ──► C1 normalize ──► t53.canonical_events ──► T5.4 orchestrator
+                                                                      │ calls T5.1 RAG
+                                                                      │ selects agent (T5.2)
+                                                                      ▼
+t53.action_requests ◄────────────────────────────── T5.4 dispatches ActionRequest
+       │
+       ▼
+C5 guardrail ──► C3+C4 execute ──► t53.results ──► T5.4 closes incident
+```
+
+| Broker topic | STANDALONE | INTEGRATED |
+|---|---|---|
+| `pilot.events.raw` | consumed (full pipeline) | consumed (C1 only) |
+| `t53.canonical_events` | published (observability) | published (T5.4 input) |
+| `t53.action_requests` | not used | consumed (T5.4 output → C5+C3+C4) |
+| `t53.results` | published | published |
 
 ---
 
