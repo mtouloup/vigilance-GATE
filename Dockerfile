@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies first (layer cache)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir pika>=1.3 pydantic>=2.0 pyyaml>=6.0
+RUN pip install --no-cache-dir pika>=1.3 pydantic>=2.0 pyyaml>=6.0 requests>=2.31
 
 # Copy source
 COPY vigilance/ vigilance/
