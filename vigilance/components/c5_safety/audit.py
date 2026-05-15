@@ -14,10 +14,16 @@ _PILOT_PREFIXES: dict[str, str] = {
     "TELECOM": "OTE",
     "Siemens_RO": "SIE",
     "INDUSTRY_4": "SIE",
+    "Rotterdam_NL": "ROT",
+    "MARITIME": "ROT",
+    "CaixaBank_ES": "CAI",
+    "FINANCE": "CAI",
 }
 _PILOT_STARTS: dict[str, int] = {
     "OTE": 31,
     "SIE": 74,
+    "ROT": 1,
+    "CAI": 1,
 }
 
 

@@ -41,6 +41,16 @@ class StubLLMProvider(LLMProvider):
         '"actions": ["isolate_plc", "revoke_ot_session", "notify_soc", "update_zt_policy"], '
         '"confidence": 0.91}'
     )
+    _DECISION_MARITIME = (
+        '{"decision": "AIS_SPOOFING", '
+        '"actions": ["block_vessel_access", "quarantine_cargo_system", "notify_port_authority", "notify_soc"], '
+        '"confidence": 0.88}'
+    )
+    _DECISION_FINANCE = (
+        '{"decision": "ACCOUNT_TAKEOVER", '
+        '"actions": ["freeze_account", "block_transaction", "notify_fraud_team", "notify_soc"], '
+        '"confidence": 0.93}'
+    )
 
     # Stub OPA/Rego policy
     _REGO_STUB = (
@@ -69,10 +79,14 @@ class StubLLMProvider(LLMProvider):
             # Turn 2: call second tool
             return self._TOOL_TURN_2
         else:
-            # Turn 3+: return final decision based on pilot
+            # Turn 3+: return final decision based on pilot sector keyword
             system_lower = system_prompt.lower()
-            if "industrial" in system_lower or "ot" in system_lower or "rame" in system_lower:
+            if "industrial" in system_lower or "rame" in system_lower or "plc" in system_lower:
                 return self._DECISION_INDUSTRY4
+            elif "maritime" in system_lower or "vessel" in system_lower or "rotterdam" in system_lower:
+                return self._DECISION_MARITIME
+            elif "financial" in system_lower or "fraud" in system_lower or "caixabank" in system_lower:
+                return self._DECISION_FINANCE
             else:
                 return self._DECISION_TELECOM
 
@@ -91,20 +105,38 @@ class StubLLMProvider(LLMProvider):
             "count": 100,
             "nodes_affected": 1,
             "timestamp": "2026-01-01T00:00:00Z",
+            # TELECOM
             "subscriber_id": None,
             "cell_id": None,
             "imsi": None,
+            # INDUSTRY_4
             "plc_id": None,
             "line_id": None,
             "scada_zone": None,
             "ot_protocol": None,
             "ot_safety_flag": False,
+            # MARITIME
+            "vessel_id": None,
+            "port_zone": None,
+            "ais_mmsi": None,
+            "cargo_system_id": None,
+            # FINANCE
+            "account_id": None,
+            "transaction_id": None,
+            "branch_id": None,
+            "fraud_score": None,
         }
 
         # Heuristic overrides based on raw text content
-        if "plc" in raw_lower or "ot" in raw_lower or "scada" in raw_lower:
+        if "plc" in raw_lower or "scada" in raw_lower or "opc" in raw_lower:
             field_defaults["type"] = "OT_ANOMALY"
             field_defaults["pilot"] = "INDUSTRY_4"
+        elif "vessel" in raw_lower or "ais" in raw_lower or "port" in raw_lower or "cargo" in raw_lower:
+            field_defaults["type"] = "AIS_ANOMALY"
+            field_defaults["pilot"] = "MARITIME"
+        elif "account" in raw_lower or "transaction" in raw_lower or "fraud" in raw_lower:
+            field_defaults["type"] = "FRAUD_ATTEMPT"
+            field_defaults["pilot"] = "FINANCE"
 
         if "critical" in raw_lower:
             field_defaults["severity"] = "CRITICAL"

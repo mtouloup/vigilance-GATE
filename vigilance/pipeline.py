@@ -37,6 +37,24 @@ def _build_industry4_adapters() -> dict[str, ToolAdapter]:
     return {p.plugin_name: p for p in plugins}
 
 
+def _build_maritime_adapters() -> dict[str, ToolAdapter]:
+    from vigilance.components.c4_adapters.maritime.siem_plugin import PortSIEMPlugin
+    from vigilance.components.c4_adapters.maritime.iam_plugin import PortIAMPlugin
+    from vigilance.components.c4_adapters.maritime.port_ops_plugin import PortOpsPlugin
+
+    plugins = [PortSIEMPlugin(), PortIAMPlugin(), PortOpsPlugin()]
+    return {p.plugin_name: p for p in plugins}
+
+
+def _build_finance_adapters() -> dict[str, ToolAdapter]:
+    from vigilance.components.c4_adapters.finance.siem_plugin import BankSIEMPlugin
+    from vigilance.components.c4_adapters.finance.iam_plugin import BankIAMPlugin
+    from vigilance.components.c4_adapters.finance.fraud_engine_plugin import FraudEnginePlugin
+
+    plugins = [BankSIEMPlugin(), BankIAMPlugin(), FraudEnginePlugin()]
+    return {p.plugin_name: p for p in plugins}
+
+
 class T53Pipeline:
     """Main processing pipeline that orchestrates all T5.3 components.
 
@@ -74,10 +92,13 @@ class T53Pipeline:
         self._executor = ActionExecutor(self._policy_translator)
 
         # C4 — select adapters based on sector
-        if self._profile.sector == "INDUSTRY_4":
-            self._adapters = _build_industry4_adapters()
-        else:
-            self._adapters = _build_telecom_adapters()
+        _adapter_builders = {
+            "INDUSTRY_4": _build_industry4_adapters,
+            "MARITIME": _build_maritime_adapters,
+            "FINANCE": _build_finance_adapters,
+        }
+        builder = _adapter_builders.get(self._profile.sector, _build_telecom_adapters)
+        self._adapters = builder()
 
         # C5
         self._guardrail = SafetyGate()

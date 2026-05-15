@@ -1,0 +1,20 @@
+sector: FINANCE
+pilot: CaixaBank_ES
+schema_extensions:
+  - { field: account_id,      type: string }
+  - { field: transaction_id,  type: string }
+  - { field: branch_id,       type: string }
+  - { field: fraud_score,     type: float,  default: 0.0 }
+tool_plugins: [bank_siem, bank_iam, fraud_engine]
+policy_templates: [zt_freeze_account, zt_block_payment_channel, zt_escalate_compliance]
+llm_system_prompt: >
+  You are a financial cybersecurity analyst for CaixaBank.
+  Focus on: fraud detection, account takeover, payment fraud, insider threats,
+  and regulatory compliance (PSD2, GDPR, DORA).
+  Proportionality is critical — prefer targeted account or transaction actions
+  over broad channel blocks. Escalate to compliance for insider threat indicators.
+ot_safety_flag: false
+confidence_threshold: 0.85
+protected_ranges:
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"

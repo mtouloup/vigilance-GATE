@@ -33,6 +33,8 @@ class ProfileManager:
     _SECTOR_MAP = {
         "TELECOM": "telecom.yaml",
         "INDUSTRY_4": "industry4.yaml",
+        "MARITIME": "maritime.yaml",
+        "FINANCE": "finance.yaml",
     }
 
     def __init__(self, sector: str | None = None) -> None:
