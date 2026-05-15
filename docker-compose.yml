@@ -1,20 +1,27 @@
 version: "3.9"
 
-# ── Model storage ──────────────────────────────────────────────────────────────
-# By default models are stored in the Docker-managed 'ollama_data' volume
-# (downloaded once, reused across restarts).
+# ── T5.3 Agentic Wrapper Framework — docker-compose ───────────────────────────
 #
-# If Ollama is already installed on your host and models live in ~/.ollama,
-# you can reuse them without re-downloading by setting OLLAMA_MODELS_DIR:
+# Services:
+#   rabbitmq       Message broker — queues pre-declared at startup
+#   ollama         LLM server (mistral:7b + mistral-nemo)
+#   ollama-init    One-shot model downloader (exits after pull)
+#   vigilance-gate The Agentic Wrapper Framework (T5.3)
 #
-#   OLLAMA_MODELS_DIR=~/.ollama docker compose up
+# Sector selection (default: TELECOM):
+#   VIGILANCE_SECTOR=TELECOM     docker compose up   # OTE / Greece
+#   VIGILANCE_SECTOR=INDUSTRY_4  docker compose up   # Siemens / Romania
 #
-# That bind-mounts your host model cache instead of the Docker volume.
+# Model storage:
+#   Models are stored in the Docker-managed 'ollama_data' volume by default
+#   (downloaded once, reused across restarts).
+#   To reuse models already on your host:
+#     OLLAMA_MODELS_DIR=~/.ollama docker compose up
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
 
-  # ── RabbitMQ ────────────────────────────────────────────────────────────────
+  # ── RabbitMQ ─────────────────────────────────────────────────────────────────
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: vigilance-rabbitmq
@@ -32,7 +39,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # ── Ollama LLM server ────────────────────────────────────────────────────────
+  # ── Ollama LLM server ─────────────────────────────────────────────────────────
   ollama:
     image: ollama/ollama:latest
     container_name: vigilance-ollama
@@ -47,7 +54,7 @@ services:
       retries: 6
       start_period: 10s
     restart: unless-stopped
-    # ── GPU (NVIDIA) — uncomment to enable GPU acceleration ──────────────────
+    # ── GPU (NVIDIA) — uncomment to enable GPU acceleration ───────────────────
     # deploy:
     #   resources:
     #     reservations:
@@ -56,9 +63,9 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # ── Model initialiser (runs once, then exits) ────────────────────────────────
+  # ── Model initialiser (runs once, then exits) ─────────────────────────────────
   # Pulls mistral:7b and mistral-nemo if not already present in the volume.
-  # Both pulls are idempotent — re-running does not re-download existing models.
+  # Idempotent — does not re-download models that are already cached.
   ollama-init:
     image: ollama/ollama:latest
     container_name: vigilance-ollama-init
@@ -78,27 +85,16 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # ── T5.3 worker — TELECOM sector (OTE / Greece) ──────────────────────────────
-  vigilance-telecom:
+  # ── T5.3 Agentic Wrapper Framework ───────────────────────────────────────────
+  # This is the single framework container as described in the VIGILANCE GA.
+  # Set VIGILANCE_SECTOR to select the active pilot environment:
+  #   TELECOM     → OTE pilot (Greece) — default
+  #   INDUSTRY_4  → Siemens pilot (Romania)
+  vigilance-gate:
     build: .
-    container_name: vigilance-telecom
+    container_name: vigilance-gate
     environment:
-      VIGILANCE_SECTOR: TELECOM
-      AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
-      OLLAMA_BASE_URL: http://ollama:11434
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
-    restart: on-failure
-
-  # ── T5.3 worker — INDUSTRY_4 sector (Siemens / Romania) ─────────────────────
-  vigilance-industry4:
-    build: .
-    container_name: vigilance-industry4
-    environment:
-      VIGILANCE_SECTOR: INDUSTRY_4
+      VIGILANCE_SECTOR: ${VIGILANCE_SECTOR:-TELECOM}
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
       OLLAMA_BASE_URL: http://ollama:11434
     depends_on:

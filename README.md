@@ -140,7 +140,8 @@ vigilance-GATE/
 
 ## Quick Start — Docker (recommended)
 
-The full stack (RabbitMQ + Ollama + both sector workers) runs with a single command.
+The Agentic Wrapper Framework runs as a single container (`vigilance-gate`) alongside
+RabbitMQ (message broker) and Ollama (LLM server).
 
 ### Prerequisites
 
@@ -148,7 +149,7 @@ The full stack (RabbitMQ + Ollama + both sector workers) runs with a single comm
 - [Docker Compose](https://docs.docker.com/compose/) v2 (bundled with Docker Desktop)
 - ~12 GB free disk space for LLM models (`mistral:7b` ≈ 4 GB, `mistral-nemo` ≈ 7 GB)
 
-### Start the full stack
+### Start the stack (TELECOM sector — default)
 
 ```bash
 docker compose up --build
@@ -161,15 +162,20 @@ Startup order enforced by healthchecks:
 1. `rabbitmq` → healthy (queues pre-declared from `infra/rabbitmq/definitions.json`)
 2. `ollama` → healthy (API responding)
 3. `ollama-init` → exits 0 (models pulled)
-4. `vigilance-telecom` + `vigilance-industry4` → start
+4. `vigilance-gate` → starts and listens on `pilot.events.raw`
 
 | Container | Role |
 |---|---|
 | `vigilance-rabbitmq` | RabbitMQ 3.13 — queues pre-declared at startup |
 | `vigilance-ollama` | Ollama LLM server — serves mistral:7b and mistral-nemo |
 | `vigilance-ollama-init` | One-shot model downloader (exits after pull) |
-| `vigilance-telecom` | T5.3 pipeline — TELECOM sector (OTE/GR) |
-| `vigilance-industry4` | T5.3 pipeline — INDUSTRY_4 sector (Siemens/RO) |
+| `vigilance-gate` | **T5.3 Agentic Wrapper Framework** — active sector set by `VIGILANCE_SECTOR` |
+
+### Switch to INDUSTRY_4 sector (Siemens)
+
+```bash
+VIGILANCE_SECTOR=INDUSTRY_4 docker compose up --build
+```
 
 ### Reuse models already on your host
 
@@ -194,14 +200,6 @@ deploy:
 ```
 
 Then restart with `docker compose up --build`.
-
-### Run only one sector
-
-Both sector services require Ollama to be running:
-
-```bash
-docker compose up rabbitmq ollama ollama-init vigilance-telecom --build
-```
 
 ### Send a test event
 
