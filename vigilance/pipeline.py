@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 TOPIC_CANONICAL_EVENTS = "t53.canonical_events"
 TOPIC_ACTION_REQUESTS  = "t53.action_requests"
 TOPIC_RESULTS          = "t53.results"
-TOPIC_POLICY_UPDATES   = "t53.policy_updates"   # consumed by T5.5 ZTA engine
+TOPIC_POLICY_UPDATES   = "t53.policy_updates"   # consumed by T5.5 for ZTA blueprint refinement (STAM)
 TOPIC_ACTIONS_DISPATCH = "t53.actions.dispatch"  # consumed by pilot tools (fire-and-forget)
 
 # Pilot value used when no sector can be detected from the event content

@@ -88,13 +88,24 @@ services:
   # ── T5.3 Agentic Wrapper Framework ───────────────────────────────────────────
   # Single multi-pilot container — all four GA pilots handled simultaneously.
   # Pilot is detected per-event in C1 (parsers + LLM); no sector env var needed.
+  #
+  # Interfaces:
+  #   Broker (inbound):  pilot.events.raw, t53.action_requests, dt.events.synthetic
+  #   Broker (outbound): t53.canonical_events, t53.results, t53.policy_updates,
+  #                      t53.actions.dispatch
+  #   REST API:          http://localhost:8000/api/docs  (T5.6 integration point)
   vigilance-gate:
     build: .
     container_name: vigilance-gate
+    ports:
+      - "8000:8000"   # REST API → http://localhost:8000/api/docs
     environment:
       VIGILANCE_MODE: ${VIGILANCE_MODE:-STANDALONE}
+      VIGILANCE_SIMULATION: ${VIGILANCE_SIMULATION:-}
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
       OLLAMA_BASE_URL: http://ollama:11434
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
     depends_on:
       rabbitmq:
         condition: service_healthy

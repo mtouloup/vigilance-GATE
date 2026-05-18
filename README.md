@@ -104,7 +104,10 @@ no model download required, all tests run offline.
 vigilance-GATE/
 ├── vigilance/                  Python package
 │   ├── pipeline.py             T53Pipeline — main entry point
-│   ├── service.py              Service loop (subscribes to broker, runs pipeline)
+│   ├── service.py              Broker consumer service (all three run modes)
+│   ├── main.py                 Combined entrypoint: REST API + broker consumer
+│   ├── api/
+│   │   └── app.py              FastAPI REST API (T5.6 integration point, port 8000)
 │   ├── llm/
 │   │   ├── base.py             LLMProvider ABC + StubLLMProvider (tests)
 │   │   ├── ollama_provider.py  OllamaLLMProvider (mistral:7b + mistral-nemo)
@@ -392,11 +395,18 @@ docker run -d --name rabbitmq \
   rabbitmq:3.13-management-alpine
 ```
 
-**Step 3** — Start the T5.3 service (handles all pilots):
+**Step 3** — Start the T5.3 service (handles all pilots, includes REST API on port 8000):
 
 ```bash
 AMQP_URL=amqp://vigilance:vigilance@localhost:5672/ \
 OLLAMA_BASE_URL=http://localhost:11434 \
+python -m vigilance.main
+```
+
+Swagger UI will be available at [http://localhost:8000/api/docs](http://localhost:8000/api/docs).
+
+For broker-only (no REST API):
+```bash
 python -m vigilance.service
 ```
 
@@ -420,10 +430,13 @@ pipeline = T53Pipeline(simulation_mode=True)
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIGILANCE_MODE` | `STANDALONE` | Pipeline mode: `STANDALONE` or `INTEGRATED` (see below) |
+| `VIGILANCE_MODE` | `STANDALONE` | Pipeline mode: `STANDALONE`, `INTEGRATED`, or `DIGITAL_TWIN` (see below) |
+| `VIGILANCE_SIMULATION` | *(unset)* | Simulation override: `dry_run` (log actions, skip execution) or `digital_twin` (also subscribe to `dt.events.synthetic`) |
 | `AMQP_URL` | *(unset)* | RabbitMQ AMQP URL. Unset → in-memory broker (tests/local) |
 | `OLLAMA_BASE_URL` | *(unset)* | Ollama API URL. Unset → StubLLMProvider (tests/local). Docker: `http://ollama:11434` |
 | `OLLAMA_MODELS_DIR` | `ollama_data` (volume) | Override to bind-mount host model cache (e.g. `~/.ollama`) and skip download |
+| `API_HOST` | `0.0.0.0` | REST API bind address |
+| `API_PORT` | `8000` | REST API port |
 
 ---
 
@@ -458,30 +471,91 @@ VIGILANCE_MODE=INTEGRATED docker compose up --build
 
 ```
 pilot.events.raw ──► C1 normalize ──► t53.canonical_events ──► T5.4 orchestrator
-                                                                      │ calls T5.1 RAG
+                                                                      │ calls T5.1 RAG (T5.1)
                                                                       │ selects agent (T5.2)
                                                                       ▼
 t53.action_requests ◄────────────────────────────── T5.4 dispatches ActionRequest
        │
        ▼
-C5 guardrail ──► C3 policy ──► t53.policy_updates  ──► T5.5 ZTA engine (async)
+C5 guardrail ──► C3 policy ──► t53.policy_updates  ──► T5.5 (ZTA blueprint refinement, async)
                     │
                     └──► t53.actions.dispatch  ──► pilot tools  (fire-and-forget)
                     │
                     └──► t53.results  ──► T5.4 closes incident
 ```
 
-T5.3 publishes to `t53.policy_updates` and `t53.actions.dispatch` and returns immediately (HTTP 202).
-T5.5 and the pilot tools consume in their own time — T5.3 is never blocked waiting for them.
+T5.3 publishes to `t53.policy_updates` and `t53.actions.dispatch` and returns immediately.
+T5.5 (STAM — ZTA blueprint refinement) and the pilot tools consume in their own time —
+T5.3 is never blocked waiting for them.
 
 | Broker topic | STANDALONE | INTEGRATED |
 |---|---|---|
 | `pilot.events.raw` | consumed (full pipeline) | consumed (C1 only) |
 | `t53.canonical_events` | published (observability) | published (T5.4 input) |
 | `t53.action_requests` | not used | consumed (T5.4 output → C5+C3+C4) |
-| `t53.policy_updates` | not used | published (C3 → T5.5 ZTA engine) |
+| `t53.policy_updates` | not used | published (C3 → T5.5 ZTA blueprint refinement) |
 | `t53.actions.dispatch` | not used | published (C4 → pilot tools, fire-and-forget) |
 | `t53.results` | published | published |
+| `dt.events.synthetic` | consumed (DIGITAL_TWIN mode) | not used |
+
+### DIGITAL_TWIN (WP3 D-VISOR integration)
+
+Same as STANDALONE but also subscribes to `dt.events.synthetic` — the topic used by
+WP3 STAM/D-VISOR to inject synthetic events for scenario simulation. Enables end-to-end
+pipeline validation without requiring live pilot tool connections.
+
+```bash
+VIGILANCE_MODE=DIGITAL_TWIN docker compose up --build
+# or: VIGILANCE_SIMULATION=digital_twin docker compose up --build
+```
+
+---
+
+## REST API (T5.6 Integration)
+
+T5.3 exposes a REST API on port **8000** for T5.6 Agentic ZTA Platform Integration and
+any external system that cannot use the RabbitMQ broker directly.
+
+### Interactive documentation
+
+| UI | URL |
+|---|---|
+| **Swagger UI** | [http://localhost:8000/api/docs](http://localhost:8000/api/docs) |
+| **ReDoc** | [http://localhost:8000/api/redoc](http://localhost:8000/api/redoc) |
+| **OpenAPI JSON** | [http://localhost:8000/api/openapi.json](http://localhost:8000/api/openapi.json) |
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/health` | Liveness / readiness check — returns loaded pilots and mode |
+| `GET` | `/api/v1/profiles` | List all sector profiles (tool plugins, thresholds, OT flags) |
+| `POST` | `/api/v1/events` | Submit a raw event for full pipeline processing (STANDALONE) or C1 only (INTEGRATED) |
+| `POST` | `/api/v1/action-requests` | Submit an ActionRequest for C5+C3+C4 execution — for T5.4 or external orchestrators |
+
+### Example — submit event via REST
+
+```bash
+# STANDALONE mode — returns ExecutionResult synchronously
+curl -X POST http://localhost:8000/api/v1/events \
+  -H "Content-Type: application/json" \
+  -d '{"raw": "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"}'
+
+# MARITIME event
+curl -X POST http://localhost:8000/api/v1/events \
+  -H "Content-Type: application/json" \
+  -d '{"raw": {"vessel_id":"VESSEL-042","ais_mmsi":"244820000","port_zone":"Berth-7","anomaly":"ais_position_spoofing","severity":"HIGH"}}'
+```
+
+```bash
+# Health check
+curl http://localhost:8000/api/v1/health
+
+# List profiles
+curl http://localhost:8000/api/v1/profiles
+```
+
+---
 
 ### Testing INTEGRATED mode end-to-end
 
