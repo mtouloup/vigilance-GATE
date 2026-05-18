@@ -28,6 +28,30 @@ class LLMParser:
         # LLM parser is the fallback — always claims it can parse
         return True
 
+    @staticmethod
+    def _to_int(val) -> int | None:
+        """Coerce LLM output to int, discarding non-numeric values."""
+        if val is None:
+            return None
+        if isinstance(val, int):
+            return val
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _to_float(val) -> float | None:
+        """Coerce LLM output to float, discarding non-numeric values."""
+        if val is None:
+            return None
+        if isinstance(val, float):
+            return val
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return None
+
     def parse(self, raw: str | dict) -> CanonicalEvent:
         """Use LLM field extraction to build a CanonicalEvent."""
         raw_text = str(raw) if not isinstance(raw, str) else raw
@@ -57,8 +81,8 @@ class LLMParser:
             severity=severity,
             src_ip=fields.get("src_ip"),
             target=fields.get("target"),
-            count=fields.get("count"),
-            nodes_affected=fields.get("nodes_affected"),
+            count=self._to_int(fields.get("count")),
+            nodes_affected=self._to_int(fields.get("nodes_affected")),
             # TELECOM
             subscriber_id=fields.get("subscriber_id"),
             cell_id=fields.get("cell_id"),
@@ -78,7 +102,7 @@ class LLMParser:
             account_id=fields.get("account_id"),
             transaction_id=fields.get("transaction_id"),
             branch_id=fields.get("branch_id"),
-            fraud_score=fields.get("fraud_score"),
+            fraud_score=self._to_float(fields.get("fraud_score")),
             raw_payload={"llm_parsed": True, "raw": raw_text[:500]},
             timestamp=timestamp,
         )
