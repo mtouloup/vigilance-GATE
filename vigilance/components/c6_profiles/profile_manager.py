@@ -41,6 +41,11 @@ class ProfileManager:
         self._sector = (sector or os.getenv("VIGILANCE_SECTOR", "TELECOM")).upper()
         self._profile: SectorProfile | None = None
 
+    @classmethod
+    def load_all_profiles(cls) -> dict[str, "SectorProfile"]:
+        """Load and return all four sector profiles keyed by sector name."""
+        return {sector: cls(sector=sector).load() for sector in cls._SECTOR_MAP}
+
     def load(self) -> SectorProfile:
         """Load and return the sector profile."""
         if self._profile is not None:

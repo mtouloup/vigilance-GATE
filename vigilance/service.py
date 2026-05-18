@@ -33,13 +33,12 @@ def _make_consumer(amqp_url: str) -> RabbitMQBroker:
 
 
 def run() -> None:
-    sector   = os.getenv("VIGILANCE_SECTOR", "TELECOM")
     mode     = os.getenv("VIGILANCE_MODE", "STANDALONE").upper()
     amqp_url = os.getenv("AMQP_URL", "amqp://vigilance:vigilance@rabbitmq:5672/")
 
-    logger.info(f"Starting T5.3 service: sector={sector} mode={mode} amqp={amqp_url}")
+    logger.info(f"Starting T5.3 service: pilots=ALL mode={mode} amqp={amqp_url}")
 
-    pipeline = T53Pipeline(sector=sector, mode=mode)
+    pipeline = T53Pipeline(mode=mode)
 
     # ── Raw-event handler ─────────────────────────────────────────────────────
     def handle_raw_event(message: dict) -> None:

@@ -63,9 +63,9 @@ def test_scenario_c_all_actions_succeed():
 def test_scenario_c_correct_sector_profile():
     """Verify the MARITIME profile is loaded with Rotterdam_NL pilot."""
     pipeline = T53Pipeline(sector="MARITIME")
-    assert pipeline.profile.sector == "MARITIME"
-    assert pipeline.profile.pilot == "Rotterdam_NL"
-    assert pipeline.profile.ot_safety_flag is False
-    assert "port_siem" in pipeline.profile.tool_plugins
-    assert "port_iam" in pipeline.profile.tool_plugins
-    assert "port_ops" in pipeline.profile.tool_plugins
+    assert pipeline.profiles["MARITIME"].sector == "MARITIME"
+    assert pipeline.profiles["MARITIME"].pilot == "Rotterdam_NL"
+    assert pipeline.profiles["MARITIME"].ot_safety_flag is False
+    assert "port_siem" in pipeline.profiles["MARITIME"].tool_plugins
+    assert "port_iam" in pipeline.profiles["MARITIME"].tool_plugins
+    assert "port_ops" in pipeline.profiles["MARITIME"].tool_plugins

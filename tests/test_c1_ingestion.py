@@ -134,8 +134,12 @@ class TestNormalizer:
         # LLM fallback should produce a valid event
         assert event.type is not None
 
-    def test_normalize_enriches_pilot_from_profile(self):
+    def test_normalize_ot_safety_enriched_from_profile(self):
+        # OT JSON parser always sets pilot=INDUSTRY_4 from the payload structure.
+        # When the INDUSTRY_4 profile has ot_safety_flag=True, the normalizer
+        # should ensure ot_safety_flag is set on the event.
         from vigilance.components.c6_profiles.profile_manager import ProfileManager
         profile = ProfileManager(sector="INDUSTRY_4").load()
         event = self.normalizer.normalize(OT_JSON_SAMPLE, sector_profile=profile)
         assert event.pilot == "INDUSTRY_4"
+        assert event.ot_safety_flag is True
