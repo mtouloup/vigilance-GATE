@@ -7,6 +7,8 @@ from vigilance.llm.base import LLMProvider
 from vigilance.models.canonical_event import CanonicalEvent
 
 
+_VALID_PILOTS = {"TELECOM", "MARITIME", "FINANCE", "INDUSTRY_4"}
+
 _CANONICAL_FIELDS = [
     "event_id", "type", "pilot", "severity",
     "src_ip", "target", "count", "nodes_affected",
@@ -60,7 +62,8 @@ class LLMParser:
         # Ensure required fields have sensible defaults
         event_id = fields.get("event_id") or str(uuid.uuid4())
         event_type = fields.get("type") or "UNKNOWN_EVENT"
-        pilot = fields.get("pilot") or "UNKNOWN"
+        pilot_raw = (fields.get("pilot") or "").strip().upper()
+        pilot = pilot_raw if pilot_raw in _VALID_PILOTS else "UNKNOWN"
         severity = fields.get("severity") or "MEDIUM"
 
         # Parse timestamp
