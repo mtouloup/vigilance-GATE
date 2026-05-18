@@ -1,6 +1,6 @@
-"""T5.3 service entrypoint — supports STANDALONE and INTEGRATED modes.
+"""T5.3 service entrypoint — supports STANDALONE, INTEGRATED, and DIGITAL_TWIN modes.
 
-STANDALONE (default):
+STANDALONE (default, VIGILANCE_MODE=STANDALONE):
   Subscribes to pilot.events.raw → full C1→C2→C5→C3→C4 pipeline.
 
 INTEGRATED (VIGILANCE_MODE=INTEGRATED):
@@ -13,6 +13,12 @@ INTEGRATED (VIGILANCE_MODE=INTEGRATED):
   Running on separate threads ensures that a long LLM call in C1 (thread 1)
   does not block T5.4's ActionRequest from being consumed (thread 2). Each
   thread has its own BlockingConnection so pika concurrency rules are respected.
+
+DIGITAL_TWIN (VIGILANCE_MODE=DIGITAL_TWIN):
+  Same as STANDALONE but also subscribes to dt.events.synthetic (WP3 D-VISOR).
+  Synthetic events are processed identically to real pilot events, enabling
+  end-to-end pipeline validation without live pilot tool connections.
+  Set VIGILANCE_SIMULATION=digital_twin in docker-compose to activate.
 """
 import logging
 import os
@@ -24,7 +30,8 @@ from vigilance.pipeline import T53Pipeline, TOPIC_ACTION_REQUESTS
 
 logger = logging.getLogger(__name__)
 
-TOPIC_EVENTS_RAW = "pilot.events.raw"
+TOPIC_EVENTS_RAW      = "pilot.events.raw"
+TOPIC_SYNTHETIC       = "dt.events.synthetic"
 
 
 def _make_consumer(amqp_url: str) -> RabbitMQBroker:
@@ -33,14 +40,27 @@ def _make_consumer(amqp_url: str) -> RabbitMQBroker:
 
 
 def run() -> None:
-    mode     = os.getenv("VIGILANCE_MODE", "STANDALONE").upper()
-    amqp_url = os.getenv("AMQP_URL", "amqp://vigilance:vigilance@rabbitmq:5672/")
+    mode       = os.getenv("VIGILANCE_MODE", "STANDALONE").upper()
+    amqp_url   = os.getenv("AMQP_URL", "amqp://vigilance:vigilance@rabbitmq:5672/")
+    simulation = os.getenv("VIGILANCE_SIMULATION", "").lower()
 
-    logger.info(f"Starting T5.3 service: pilots=ALL mode={mode} amqp={amqp_url}")
+    digital_twin = mode == "DIGITAL_TWIN" or simulation == "digital_twin"
+    dry_run      = simulation == "dry_run"
 
-    pipeline = T53Pipeline(mode=mode)
+    effective_mode = "STANDALONE" if mode == "DIGITAL_TWIN" else mode
 
-    # ── Raw-event handler ─────────────────────────────────────────────────────
+    logger.info(
+        f"Starting T5.3 service: pilots=ALL mode={mode} "
+        f"digital_twin={digital_twin} dry_run={dry_run} amqp={amqp_url}"
+    )
+
+    pipeline = T53Pipeline(
+        mode=effective_mode,
+        simulation_mode=digital_twin,
+        dry_run=dry_run,
+    )
+
+    # ── Raw-event handler (real + synthetic share the same handler) ───────────
     def handle_raw_event(message: dict) -> None:
         raw = message.get("raw", message)
         logger.info(f"Received raw event: {str(raw)[:120]}")
@@ -64,7 +84,7 @@ def run() -> None:
         except Exception as exc:
             logger.error(f"ActionRequest execution error: {exc}", exc_info=True)
 
-    if mode == "INTEGRATED":
+    if effective_mode == "INTEGRATED":
         # Two independent pika connections so a long C1 LLM call on the raw-event
         # thread never delays consumption of ActionRequests on the action thread.
         raw_consumer    = _make_consumer(amqp_url)
@@ -89,16 +109,40 @@ def run() -> None:
         t_raw.start()
         t_action.start()
 
-        # Block the main thread until either consumer thread dies (error/shutdown)
         t_raw.join()
         t_action.join()
 
     else:
-        # STANDALONE: single consumer, single thread is fine
+        # STANDALONE / DIGITAL_TWIN: one consumer for real events
         consumer = _make_consumer(amqp_url)
         consumer.subscribe(TOPIC_EVENTS_RAW, handle_raw_event)
-        logger.info(f"[STANDALONE] Listening on: {TOPIC_EVENTS_RAW}")
-        consumer.start_consuming()
+        logger.info(f"[{mode}] Listening on: {TOPIC_EVENTS_RAW}")
+
+        threads = [
+            threading.Thread(
+                target=consumer.start_consuming,
+                name="consumer-raw-events",
+                daemon=True,
+            )
+        ]
+
+        if digital_twin:
+            # Additional consumer for WP3 D-VISOR synthetic events
+            dt_consumer = _make_consumer(amqp_url)
+            dt_consumer.subscribe(TOPIC_SYNTHETIC, handle_raw_event)
+            logger.info(f"[DIGITAL_TWIN] Also listening on: {TOPIC_SYNTHETIC}")
+            threads.append(
+                threading.Thread(
+                    target=dt_consumer.start_consuming,
+                    name="consumer-synthetic-events",
+                    daemon=True,
+                )
+            )
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
 
 if __name__ == "__main__":
