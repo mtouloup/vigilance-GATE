@@ -1,5 +1,12 @@
-"""T53Pipeline — ties all components together into a unified processing pipeline."""
+"""T53Pipeline — ties all components together into a unified processing pipeline.
+
+T5.3 is a single multi-pilot agentic wrapper that serves all four VIGILANCE
+GA pilots simultaneously (TELECOM, MARITIME, FINANCE, INDUSTRY_4). At startup
+all sector profiles and all C4 adapter sets are loaded. Each event is routed
+to the correct profile and adapters based on the pilot detected by C1 parsers.
+"""
 from __future__ import annotations
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -19,9 +26,16 @@ from vigilance.models.canonical_event import CanonicalEvent
 from vigilance.models.execution_result import ActionResult, ExecutionResult
 from vigilance.models.guardrail_check import GuardrailVerdict
 
+logger = logging.getLogger(__name__)
+
 TOPIC_CANONICAL_EVENTS = "t53.canonical_events"
 TOPIC_ACTION_REQUESTS  = "t53.action_requests"
 TOPIC_RESULTS          = "t53.results"
+
+# Pilot value used when no sector can be detected from the event content
+_UNKNOWN_PILOT = "UNKNOWN"
+# Sector used as last-resort fallback when pilot remains UNKNOWN after C1
+_FALLBACK_SECTOR = "TELECOM"
 
 
 def _build_telecom_adapters() -> dict[str, ToolAdapter]:
@@ -60,16 +74,27 @@ def _build_finance_adapters() -> dict[str, ToolAdapter]:
     return {p.plugin_name: p for p in plugins}
 
 
+_ADAPTER_BUILDERS = {
+    "TELECOM":    _build_telecom_adapters,
+    "INDUSTRY_4": _build_industry4_adapters,
+    "MARITIME":   _build_maritime_adapters,
+    "FINANCE":    _build_finance_adapters,
+}
+
+
 class T53Pipeline:
     """Main processing pipeline that orchestrates all T5.3 components.
 
+    Supports all four GA pilots in a single instance. Pilot detection happens
+    in C1 (parsers + LLM fallback). C2, C5, C3+C4 are then executed with the
+    profile and adapters that correspond to the detected pilot.
+
     STANDALONE mode (default):
       pilot.events.raw → C1 → C2 → C5 → C3+C4 → t53.results
-      Also publishes CanonicalEvent to t53.canonical_events for observability.
 
     INTEGRATED mode (VIGILANCE_MODE=INTEGRATED):
       pilot.events.raw → C1 → t53.canonical_events  (T5.4 takes over)
-      t53.action_requests  → C5 → C3+C4 → t53.results  (T5.4 dispatches back)
+      t53.action_requests  → C5 → C3+C4 → t53.results
     """
 
     def __init__(
@@ -81,9 +106,8 @@ class T53Pipeline:
     ) -> None:
         self._mode = mode.upper()
 
-        # C6 — load profile
-        self._profile_manager = ProfileManager(sector=sector)
-        self._profile: SectorProfile = self._profile_manager.load()
+        # C6 — load ALL sector profiles at startup
+        self._profiles: dict[str, SectorProfile] = ProfileManager.load_all_profiles()
 
         # LLM
         self._llm = create_llm()
@@ -91,21 +115,18 @@ class T53Pipeline:
         # C1
         self._normalizer = Normalizer(self._llm)
 
-        # C2 (used in STANDALONE only)
+        # C2
         self._agent = AgentLoop()
 
         # C3
         self._policy_translator = PolicyTranslator(self._llm)
         self._executor = ActionExecutor(self._policy_translator)
 
-        # C4 — select adapters based on sector
-        _adapter_builders = {
-            "INDUSTRY_4": _build_industry4_adapters,
-            "MARITIME": _build_maritime_adapters,
-            "FINANCE": _build_finance_adapters,
+        # C4 — build adapter sets for ALL sectors at startup
+        self._all_adapters: dict[str, dict[str, ToolAdapter]] = {
+            sector_key: builder()
+            for sector_key, builder in _ADAPTER_BUILDERS.items()
         }
-        builder = _adapter_builders.get(self._profile.sector, _build_telecom_adapters)
-        self._adapters = builder()
 
         # Event cache for INTEGRATED mode: event_id → CanonicalEvent
         self._event_cache: dict[str, CanonicalEvent] = {}
@@ -121,42 +142,60 @@ class T53Pipeline:
         # Broker
         self._broker = create_broker()
 
+        sectors_loaded = list(self._profiles.keys())
         print(
-            f"[T53Pipeline] Initialized: sector={self._profile.sector} "
-            f"pilot={self._profile.pilot} "
-            f"mode={self._mode} "
-            f"simulation={self._simulation}"
+            f"[T53Pipeline] Initialized: pilots={sectors_loaded} "
+            f"mode={self._mode} simulation={self._simulation}"
         )
 
-    def process_event(self, raw_event: str | dict) -> ExecutionResult:
-        """Process a raw event — routes to standalone or integrated mode.
+    # ── Profile + adapter lookup per event ────────────────────────────────────
 
-        In STANDALONE mode runs the full C1→C2→C5→C3→C4 pipeline.
-        In INTEGRATED mode runs C1 only and publishes CanonicalEvent for T5.4.
+    def _profile_for(self, pilot: str) -> SectorProfile:
+        """Return the SectorProfile for the given pilot/sector.
+
+        Falls back to TELECOM with a warning if pilot is UNKNOWN or unrecognised.
         """
+        profile = self._profiles.get(pilot)
+        if profile is None:
+            logger.warning(
+                f"Pilot '{pilot}' has no registered profile — "
+                f"falling back to {_FALLBACK_SECTOR}. "
+                "Improve C1 extraction or add a profile for this sector."
+            )
+            profile = self._profiles[_FALLBACK_SECTOR]
+        return profile
+
+    def _adapters_for(self, sector: str) -> dict[str, ToolAdapter]:
+        return self._all_adapters.get(sector, self._all_adapters[_FALLBACK_SECTOR])
+
+    # ── Entry point ───────────────────────────────────────────────────────────
+
+    def process_event(self, raw_event: str | dict) -> ExecutionResult:
+        """Process a raw event — routes to standalone or integrated mode."""
         if self._mode == "INTEGRATED":
             self.ingest_event(raw_event)
-            return None  # T5.4 will dispatch the ActionRequest separately
+            return None
         return self._run_standalone(raw_event)
 
     # ── STANDALONE: full internal pipeline ────────────────────────────────────
 
     def _run_standalone(self, raw_event: str | dict) -> ExecutionResult:
         """STANDALONE full pipeline: C1 → C2 → C5 → C3+C4 → publish result."""
-        profile = self._profile
-
-        # --- C1: Normalize ---
         print("[T53Pipeline] C1: Normalizing event...")
-        event = self._normalizer.normalize(raw_event, profile)
+        event = self._normalizer.normalize(raw_event)
+        profile = self._profile_for(event.pilot)
+
+        # Apply sector-specific enrichments (e.g. INDUSTRY_4 OT safety flag)
+        event = self._normalizer.normalize(raw_event, sector_profile=profile) \
+            if event.pilot != _UNKNOWN_PILOT else event
+
         print(
             f"[T53Pipeline] C1 → event_id={event.event_id} "
             f"type={event.type} severity={event.severity} pilot={event.pilot}"
         )
 
-        # Publish CanonicalEvent for observability (T5.4 can subscribe even in STANDALONE)
         self._broker.publish(TOPIC_CANONICAL_EVENTS, event.model_dump(mode="json"))
 
-        # --- C2: Agentic reasoning ---
         print("[T53Pipeline] C2: Running agentic loop...")
         decision = self._agent.run(event, profile, self._llm)
         print(
@@ -177,21 +216,19 @@ class T53Pipeline:
             agent_confidence=decision.confidence,
         )
 
-        return self._guardrail_and_execute(request, event)
+        return self._guardrail_and_execute(request, event, profile)
 
     # ── INTEGRATED: C1 ingestion half ─────────────────────────────────────────
 
     def ingest_event(self, raw_event: str | dict) -> CanonicalEvent:
-        """INTEGRATED mode — C1 only.
-
-        Normalises the raw event, caches it by event_id, and publishes the
-        CanonicalEvent to t53.canonical_events for T5.4 to consume.
-        T5.4 will call T5.1 (RAG) and T5.2 (agent catalogue), then dispatch
-        an ActionRequest back to t53.action_requests.
-        """
-        profile = self._profile
+        """INTEGRATED mode — C1 only: normalize, cache, and publish CanonicalEvent."""
         print("[T53Pipeline][INTEGRATED] C1: Normalizing event...")
-        event = self._normalizer.normalize(raw_event, profile)
+        event = self._normalizer.normalize(raw_event)
+
+        # Apply sector-specific profile enrichments once pilot is known
+        profile = self._profile_for(event.pilot)
+        event = self._normalizer._enrich_with_profile(event, profile)
+
         print(
             f"[T53Pipeline][INTEGRATED] C1 → event_id={event.event_id} "
             f"type={event.type} severity={event.severity} pilot={event.pilot}"
@@ -208,12 +245,7 @@ class T53Pipeline:
     # ── INTEGRATED: C5+C3+C4 execution half ───────────────────────────────────
 
     def execute_action_request(self, action_request_dict: dict) -> ExecutionResult:
-        """INTEGRATED mode — receives ActionRequest dispatched by T5.4.
-
-        Looks up the original CanonicalEvent from the cache (by event_id),
-        runs the C5 guardrail, executes via C3+C4, and publishes the
-        ExecutionResult to t53.results.
-        """
+        """INTEGRATED mode — receives ActionRequest dispatched by T5.4."""
         request = ActionRequest(**action_request_dict)
         print(
             f"[T53Pipeline][INTEGRATED] ActionRequest received from T5.4: "
@@ -221,11 +253,8 @@ class T53Pipeline:
             f"confidence={request.agent_confidence:.2f}"
         )
 
-        # Retrieve the CanonicalEvent stored during ingest_event()
         event = self._event_cache.get(request.event_id)
         if event is None:
-            # Fallback: reconstruct a minimal CanonicalEvent from the request
-            from datetime import timezone
             event = CanonicalEvent(
                 event_id=request.event_id,
                 type="UNKNOWN",
@@ -233,21 +262,23 @@ class T53Pipeline:
                 severity="HIGH",
                 timestamp=datetime.now(timezone.utc),
             )
-            print(
-                f"[T53Pipeline][INTEGRATED] WARNING: event_id={request.event_id} "
-                "not in cache — using minimal CanonicalEvent"
+            logger.warning(
+                f"event_id={request.event_id} not in cache — using minimal CanonicalEvent"
             )
 
-        return self._guardrail_and_execute(request, event)
+        # Select profile based on the event's detected pilot
+        profile = self._profile_for(event.pilot)
+        return self._guardrail_and_execute(request, event, profile)
 
-    # ── Shared: guardrail + execution (used by both modes) ────────────────────
+    # ── Shared: guardrail + execution ─────────────────────────────────────────
 
     def _guardrail_and_execute(
         self,
         request: ActionRequest,
         event: CanonicalEvent,
+        profile: SectorProfile,
     ) -> ExecutionResult:
-        profile = self._profile
+        adapters = self._adapters_for(profile.sector)
 
         audit_id = self._audit.open_record(
             pilot_id=profile.pilot,
@@ -256,7 +287,6 @@ class T53Pipeline:
         )
         print(f"[T53Pipeline] C5: Audit record opened: {audit_id}")
 
-        # --- C5: Guardrail check ---
         print("[T53Pipeline] C5: Running guardrail checks...")
         guardrail = self._guardrail.check(request, event, profile, self._llm)
         print(
@@ -265,7 +295,6 @@ class T53Pipeline:
             f"reasons={guardrail.reasons}"
         )
 
-        # --- C3+C4: Execute ---
         if guardrail.verdict == GuardrailVerdict.REJECTED:
             print("[T53Pipeline] C5: REJECTED — skipping execution")
             result = ExecutionResult(
@@ -290,7 +319,7 @@ class T53Pipeline:
             result = self._dry_run_result(request, event, profile)
         else:
             print(f"[T53Pipeline] C3+C4: Executing {len(request.actions)} actions...")
-            result = self._executor.execute(request, profile, self._adapters)
+            result = self._executor.execute(request, profile, adapters)
 
         print(
             f"[T53Pipeline] C3+C4 → overall_success={result.overall_success} "
@@ -303,13 +332,7 @@ class T53Pipeline:
         self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
         return result
 
-    def _dry_run_result(
-        self,
-        request: ActionRequest,
-        event,
-        profile,
-    ) -> ExecutionResult:
-        """Produce a dry-run execution result (no real execution)."""
+    def _dry_run_result(self, request, event, profile) -> ExecutionResult:
         action_results = [
             ActionResult(
                 action=action,
@@ -332,15 +355,13 @@ class T53Pipeline:
 
     @property
     def audit_log(self) -> AuditLog:
-        """Access the audit log for inspection."""
         return self._audit
 
     @property
     def broker(self) -> BaseBroker:
-        """Access the message broker for inspection."""
         return self._broker
 
     @property
-    def profile(self) -> SectorProfile:
-        """Access the loaded sector profile."""
-        return self._profile
+    def profiles(self) -> dict[str, SectorProfile]:
+        """All loaded sector profiles keyed by sector name."""
+        return self._profiles

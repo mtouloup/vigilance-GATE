@@ -64,16 +64,16 @@ def test_scenario_d_all_actions_succeed():
 def test_scenario_d_correct_sector_profile():
     """Verify the FINANCE profile is loaded with CaixaBank_ES pilot."""
     pipeline = T53Pipeline(sector="FINANCE")
-    assert pipeline.profile.sector == "FINANCE"
-    assert pipeline.profile.pilot == "CaixaBank_ES"
-    assert pipeline.profile.ot_safety_flag is False
-    assert pipeline.profile.confidence_threshold == 0.85
-    assert "bank_siem" in pipeline.profile.tool_plugins
-    assert "bank_iam" in pipeline.profile.tool_plugins
-    assert "fraud_engine" in pipeline.profile.tool_plugins
+    assert pipeline.profiles["FINANCE"].sector == "FINANCE"
+    assert pipeline.profiles["FINANCE"].pilot == "CaixaBank_ES"
+    assert pipeline.profiles["FINANCE"].ot_safety_flag is False
+    assert pipeline.profiles["FINANCE"].confidence_threshold == 0.85
+    assert "bank_siem" in pipeline.profiles["FINANCE"].tool_plugins
+    assert "bank_iam" in pipeline.profiles["FINANCE"].tool_plugins
+    assert "fraud_engine" in pipeline.profiles["FINANCE"].tool_plugins
 
 
 def test_scenario_d_higher_confidence_threshold():
     """Finance sector requires confidence >= 0.85 (higher than default 0.80)."""
     pipeline = T53Pipeline(sector="FINANCE")
-    assert pipeline.profile.confidence_threshold == 0.85
+    assert pipeline.profiles["FINANCE"].confidence_threshold == 0.85

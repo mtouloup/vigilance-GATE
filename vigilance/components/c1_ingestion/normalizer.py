@@ -33,14 +33,15 @@ class Normalizer:
 
         Args:
             raw: Raw event as string or dict.
-            sector_profile: Optional SectorProfile for pilot context enrichment.
+            sector_profile: Optional SectorProfile for sector-specific enrichment
+                (e.g. OT safety flag). Pilot is determined from the event content
+                by the parsers — this profile does NOT override the detected pilot.
 
         Returns:
             CanonicalEvent with normalized fields.
         """
         event = self._try_parse(raw)
 
-        # Enrich with sector profile context if available
         if sector_profile is not None:
             event = self._enrich_with_profile(event, sector_profile)
 
@@ -63,13 +64,14 @@ class Normalizer:
         return self._llm_parser.parse(raw)
 
     def _enrich_with_profile(self, event: CanonicalEvent, profile) -> CanonicalEvent:
-        """Resolve pilot from profile when parser couldn't determine it, and enrich sector fields."""
-        data = event.model_dump()
-        # Resolve UNKNOWN → profile sector; also correct mismatches for known parsers
-        if event.pilot == "UNKNOWN" or event.pilot != profile.sector:
-            data["pilot"] = profile.sector
-        # Apply sector-specific enrichments
-        if profile.sector == "INDUSTRY_4":
-            if profile.ot_safety_flag and not data.get("ot_safety_flag"):
+        """Apply sector-specific field enrichments from the profile.
+
+        Does NOT override the pilot — that is determined by the parsers from
+        event content. Only applies additive enrichments (e.g. OT safety flag).
+        """
+        if profile.sector == "INDUSTRY_4" and event.pilot == "INDUSTRY_4":
+            if profile.ot_safety_flag and not event.ot_safety_flag:
+                data = event.model_dump()
                 data["ot_safety_flag"] = True
-        return CanonicalEvent(**data)
+                return CanonicalEvent(**data)
+        return event
