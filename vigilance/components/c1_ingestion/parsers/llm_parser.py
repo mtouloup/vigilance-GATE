@@ -54,17 +54,28 @@ class LLMParser:
         except (TypeError, ValueError):
             return None
 
+    @staticmethod
+    def _to_str(val) -> str | None:
+        """Coerce LLM output to str; joins lists, discards other non-string types."""
+        if val is None:
+            return None
+        if isinstance(val, str):
+            return val or None
+        if isinstance(val, list):
+            return ", ".join(str(v) for v in val) if val else None
+        return str(val) or None
+
     def parse(self, raw: str | dict) -> CanonicalEvent:
         """Use LLM field extraction to build a CanonicalEvent."""
         raw_text = str(raw) if not isinstance(raw, str) else raw
         fields = self._llm.extract_fields(raw_text, _CANONICAL_FIELDS)
 
         # Ensure required fields have sensible defaults
-        event_id = fields.get("event_id") or str(uuid.uuid4())
-        event_type = fields.get("type") or "UNKNOWN_EVENT"
-        pilot_raw = (fields.get("pilot") or "").strip().upper()
+        event_id = self._to_str(fields.get("event_id")) or str(uuid.uuid4())
+        event_type = self._to_str(fields.get("type")) or "UNKNOWN_EVENT"
+        pilot_raw = (self._to_str(fields.get("pilot")) or "").strip().upper()
         pilot = pilot_raw if pilot_raw in _VALID_PILOTS else "UNKNOWN"
-        severity = fields.get("severity") or "MEDIUM"
+        severity = self._to_str(fields.get("severity")) or "MEDIUM"
 
         # Parse timestamp
         ts_val = fields.get("timestamp")
@@ -82,29 +93,29 @@ class LLMParser:
             type=event_type,
             pilot=pilot,
             severity=severity,
-            src_ip=fields.get("src_ip"),
-            target=fields.get("target"),
+            src_ip=self._to_str(fields.get("src_ip")),
+            target=self._to_str(fields.get("target")),
             count=self._to_int(fields.get("count")),
             nodes_affected=self._to_int(fields.get("nodes_affected")),
             # TELECOM
-            subscriber_id=fields.get("subscriber_id"),
-            cell_id=fields.get("cell_id"),
-            imsi=fields.get("imsi"),
+            subscriber_id=self._to_str(fields.get("subscriber_id")),
+            cell_id=self._to_str(fields.get("cell_id")),
+            imsi=self._to_str(fields.get("imsi")),
             # INDUSTRY_4
-            plc_id=fields.get("plc_id"),
-            line_id=fields.get("line_id"),
-            scada_zone=fields.get("scada_zone"),
-            ot_protocol=fields.get("ot_protocol"),
+            plc_id=self._to_str(fields.get("plc_id")),
+            line_id=self._to_str(fields.get("line_id")),
+            scada_zone=self._to_str(fields.get("scada_zone")),
+            ot_protocol=self._to_str(fields.get("ot_protocol")),
             ot_safety_flag=bool(fields.get("ot_safety_flag", False)),
             # MARITIME
-            vessel_id=fields.get("vessel_id"),
-            port_zone=fields.get("port_zone"),
-            ais_mmsi=fields.get("ais_mmsi"),
-            cargo_system_id=fields.get("cargo_system_id"),
+            vessel_id=self._to_str(fields.get("vessel_id")),
+            port_zone=self._to_str(fields.get("port_zone")),
+            ais_mmsi=self._to_str(fields.get("ais_mmsi")),
+            cargo_system_id=self._to_str(fields.get("cargo_system_id")),
             # FINANCE
-            account_id=fields.get("account_id"),
-            transaction_id=fields.get("transaction_id"),
-            branch_id=fields.get("branch_id"),
+            account_id=self._to_str(fields.get("account_id")),
+            transaction_id=self._to_str(fields.get("transaction_id")),
+            branch_id=self._to_str(fields.get("branch_id")),
             fraud_score=self._to_float(fields.get("fraud_score")),
             raw_payload={"llm_parsed": True, "raw": raw_text[:500]},
             timestamp=timestamp,
