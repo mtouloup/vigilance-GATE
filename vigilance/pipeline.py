@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 TOPIC_CANONICAL_EVENTS = "t53.canonical_events"
 TOPIC_ACTION_REQUESTS  = "t53.action_requests"
 TOPIC_RESULTS          = "t53.results"
+TOPIC_POLICY_UPDATES   = "t53.policy_updates"   # consumed by T5.5 ZTA engine
+TOPIC_ACTIONS_DISPATCH = "t53.actions.dispatch"  # consumed by pilot tools (fire-and-forget)
 
 # Pilot value used when no sector can be detected from the event content
 _UNKNOWN_PILOT = "UNKNOWN"
@@ -317,7 +319,10 @@ class T53Pipeline:
         elif self._simulation.dry_run:
             print("[T53Pipeline] Dry-run mode: logging actions without executing")
             result = self._dry_run_result(request, event, profile)
+        elif self._mode == "INTEGRATED":
+            result = self._broker_dispatch(request, event, profile)
         else:
+            # STANDALONE: direct execution via C4 adapter simulation
             print(f"[T53Pipeline] C3+C4: Executing {len(request.actions)} actions...")
             result = self._executor.execute(request, profile, adapters)
 
@@ -331,6 +336,69 @@ class T53Pipeline:
 
         self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
         return result
+
+    def _broker_dispatch(
+        self,
+        request: ActionRequest,
+        event: CanonicalEvent,
+        profile: SectorProfile,
+    ) -> ExecutionResult:
+        """INTEGRATED mode execution path — fire-and-forget via broker.
+
+        Publishes policy updates to T5.5 (t53.policy_updates) and action
+        requests to pilot tools (t53.actions.dispatch). T5.3 does not wait
+        for tool responses — it returns immediately with HTTP 202 Accepted.
+        """
+        # C3: translate NL policy → Rego and publish to T5.5 ZTA engine
+        if request.policy_update:
+            rego = self._policy_translator.translate(request.policy_update)
+            self._broker.publish(TOPIC_POLICY_UPDATES, {
+                "request_id": request.request_id,
+                "event_id": request.event_id,
+                "pilot": profile.pilot,
+                "sector": profile.sector,
+                "nl_policy": request.policy_update,
+                "rego_rule": rego,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            print(
+                f"[C3] Policy update → {TOPIC_POLICY_UPDATES} "
+                f"({len(rego)} chars, pilot={profile.pilot})"
+            )
+
+        # C4: dispatch actions to pilot tools — fire-and-forget
+        self._broker.publish(TOPIC_ACTIONS_DISPATCH, {
+            "request_id": request.request_id,
+            "event_id": request.event_id,
+            "pilot": profile.pilot,
+            "sector": profile.sector,
+            "actions": request.actions,
+            "agent_confidence": request.agent_confidence,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        print(
+            f"[C3] Actions dispatched → {TOPIC_ACTIONS_DISPATCH}: "
+            f"{request.actions} (pilot={profile.pilot})"
+        )
+
+        return ExecutionResult(
+            request_id=request.request_id,
+            event_id=event.event_id,
+            pilot=profile.pilot,
+            action_results=[
+                ActionResult(
+                    action=action,
+                    plugin="broker_dispatch",
+                    success=True,
+                    latency_ms=0,
+                    response_code=202,
+                    message=f"Dispatched to pilot tools via {TOPIC_ACTIONS_DISPATCH}",
+                )
+                for action in request.actions
+            ],
+            overall_success=True,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     def _dry_run_result(self, request, event, profile) -> ExecutionResult:
         action_results = [

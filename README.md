@@ -464,14 +464,23 @@ pilot.events.raw ──► C1 normalize ──► t53.canonical_events ──►
 t53.action_requests ◄────────────────────────────── T5.4 dispatches ActionRequest
        │
        ▼
-C5 guardrail ──► C3+C4 execute ──► t53.results ──► T5.4 closes incident
+C5 guardrail ──► C3 policy ──► t53.policy_updates  ──► T5.5 ZTA engine (async)
+                    │
+                    └──► t53.actions.dispatch  ──► pilot tools  (fire-and-forget)
+                    │
+                    └──► t53.results  ──► T5.4 closes incident
 ```
+
+T5.3 publishes to `t53.policy_updates` and `t53.actions.dispatch` and returns immediately (HTTP 202).
+T5.5 and the pilot tools consume in their own time — T5.3 is never blocked waiting for them.
 
 | Broker topic | STANDALONE | INTEGRATED |
 |---|---|---|
 | `pilot.events.raw` | consumed (full pipeline) | consumed (C1 only) |
 | `t53.canonical_events` | published (observability) | published (T5.4 input) |
 | `t53.action_requests` | not used | consumed (T5.4 output → C5+C3+C4) |
+| `t53.policy_updates` | not used | published (C3 → T5.5 ZTA engine) |
+| `t53.actions.dispatch` | not used | published (C4 → pilot tools, fire-and-forget) |
 | `t53.results` | published | published |
 
 ### Testing INTEGRATED mode end-to-end

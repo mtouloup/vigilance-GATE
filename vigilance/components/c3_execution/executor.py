@@ -37,12 +37,9 @@ class ActionExecutor:
         """
         action_results: list[ActionResult] = []
 
-        # Translate policy update if present
+        # Translate policy update if present (uses the LLM injected at construction)
         if request.policy_update and self._policy_translator:
-            from vigilance.llm import StubLLMProvider
-            rego = self._policy_translator.translate(
-                request.policy_update, llm=StubLLMProvider()
-            )
+            rego = self._policy_translator.translate(request.policy_update)
             print(f"[C3] Translated policy to Rego ({len(rego)} chars)")
 
         for action in request.actions:
