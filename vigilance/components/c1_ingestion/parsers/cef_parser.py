@@ -43,12 +43,18 @@ class CEFParser:
 
         severity = self._map_severity(cef_severity_int)
 
-        # Determine pilot from device product
+        # Determine pilot from device product; normalizer will resolve UNKNOWN via profile
         device_product = parts[2].strip().upper()
         if any(kw in device_product for kw in ("OTE", "TELECOM", "SOC")):
             pilot = "TELECOM"
+        elif any(kw in device_product for kw in ("SIEMENS", "SCADA", "OT", "ICS")):
+            pilot = "INDUSTRY_4"
+        elif any(kw in device_product for kw in ("PORT", "MARITIME", "AIS", "VESSEL")):
+            pilot = "MARITIME"
+        elif any(kw in device_product for kw in ("BANK", "FINANCE", "FRAUD", "CAIX")):
+            pilot = "FINANCE"
         else:
-            pilot = "TELECOM"  # Default to TELECOM for CEF events
+            pilot = "UNKNOWN"
 
         # Parse extensions
         ext_str = parts[7] if len(parts) > 7 else ""

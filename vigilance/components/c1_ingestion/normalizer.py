@@ -63,13 +63,13 @@ class Normalizer:
         return self._llm_parser.parse(raw)
 
     def _enrich_with_profile(self, event: CanonicalEvent, profile) -> CanonicalEvent:
-        """Override pilot from profile if event doesn't have sector-specific fields."""
+        """Resolve pilot from profile when parser couldn't determine it, and enrich sector fields."""
         data = event.model_dump()
-        # Set pilot from profile if the parser defaulted
-        if profile.sector == "INDUSTRY_4" and event.pilot != "INDUSTRY_4":
-            data["pilot"] = "INDUSTRY_4"
+        # Resolve UNKNOWN → profile sector; also correct mismatches for known parsers
+        if event.pilot == "UNKNOWN" or event.pilot != profile.sector:
+            data["pilot"] = profile.sector
+        # Apply sector-specific enrichments
+        if profile.sector == "INDUSTRY_4":
             if profile.ot_safety_flag and not data.get("ot_safety_flag"):
                 data["ot_safety_flag"] = True
-        elif profile.sector == "TELECOM" and event.pilot != "TELECOM":
-            data["pilot"] = "TELECOM"
         return CanonicalEvent(**data)

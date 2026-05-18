@@ -58,7 +58,7 @@ class SyslogParser:
         return CanonicalEvent(
             event_id=str(uuid.uuid4()),
             type=event_type,
-            pilot="TELECOM",
+            pilot="UNKNOWN",
             severity=severity,
             target=hostname,
             raw_payload={"syslog_raw": raw, "parsed": data},
