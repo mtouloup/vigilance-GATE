@@ -35,7 +35,16 @@ Valid actions (FINANCE):    freeze_account, block_transaction, notify_fraud_team
 _EXTRACT_FIELDS_INSTRUCTION = """
 Extract the requested fields from the provided security event text.
 Respond with a single JSON object containing ONLY the requested field names as keys.
-Use null for fields that cannot be determined. No prose, no markdown.
+Use null for fields that cannot be determined from the text — do NOT guess or infer.
+
+Field-specific rules:
+- "pilot": must be one of TELECOM, MARITIME, FINANCE, INDUSTRY_4.
+  Return null unless the text explicitly mentions telecom/network operators, maritime/vessel/port,
+  banking/finance/fraud, or industrial control systems/OT/SCADA/PLC.
+- "severity": must be one of LOW, MEDIUM, HIGH, CRITICAL. Return null if not inferable.
+- All numeric fields (count, nodes_affected, fraud_score): return null if not present in text.
+
+No prose, no markdown, no explanation — JSON object only.
 """
 
 
