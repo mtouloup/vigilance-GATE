@@ -136,7 +136,8 @@ vigilance-GATE/
 │   ├── broker/topics.json      Broker integration interface spec
 │   └── profiles/               Sector profile YAML schema
 ├── tools/
-│   └── publish_event.sh        Example producer script for pilot partners
+│   ├── publish_event.sh        Example producer script for pilot partners
+│   └── simulate_t54.sh         Simulates T5.4 orchestrator response (INTEGRATED mode testing)
 ├── infra/
 │   └── rabbitmq/
 │       ├── rabbitmq.conf       Loads definitions at broker startup
@@ -477,6 +478,63 @@ C5 guardrail ──► C3+C4 execute ──► t53.results ──► T5.4 closes
 | `t53.canonical_events` | published (observability) | published (T5.4 input) |
 | `t53.action_requests` | not used | consumed (T5.4 output → C5+C3+C4) |
 | `t53.results` | published | published |
+
+### Testing INTEGRATED mode end-to-end
+
+`tools/simulate_t54.sh` simulates the T5.4 orchestrator: it consumes the next
+`CanonicalEvent` from `t53.canonical_events`, derives an appropriate `ActionRequest`
+for the detected sector, and publishes it to `t53.action_requests` so T5.3 continues
+with C5 guardrail + C3+C4 execution.
+
+**Full walkthrough:**
+
+```bash
+# Step 1 — start the stack in INTEGRATED mode
+VIGILANCE_MODE=INTEGRATED docker compose up --build
+
+# Step 2 — send a raw event (T5.3 normalises it and publishes CanonicalEvent)
+./tools/publish_event.sh \
+  'CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH'
+
+# Step 3 — simulate T5.4 consuming the CanonicalEvent and dispatching ActionRequest
+./tools/simulate_t54.sh
+# auto-mode: reads event_id + pilot from t53.canonical_events, picks correct actions
+
+# Step 4 — check the ExecutionResult in t53.results
+docker exec vigilance-rabbitmq \
+  rabbitmqadmin get queue=t53.results ackmode=ack_requeue_true
+```
+
+**Manual dispatch (all 4 pilots):**
+
+```bash
+# TELECOM — OTE/Greece
+./tools/simulate_t54.sh --no-consume \
+  --event-id evt-ote-001 --pilot OTE_GR \
+  --actions block_ip,revoke_session,notify_soc \
+  --confidence 0.96
+
+# MARITIME — Port of Rotterdam
+./tools/simulate_t54.sh --no-consume \
+  --event-id evt-rot-001 --pilot Rotterdam_NL \
+  --actions block_vessel_access,quarantine_cargo_system,notify_port_authority,notify_soc \
+  --confidence 0.88
+
+# FINANCE — CaixaBank
+./tools/simulate_t54.sh --no-consume \
+  --event-id evt-cai-001 --pilot CaixaBank_ES \
+  --actions freeze_account,block_transaction,notify_fraud_team,notify_soc \
+  --confidence 0.93
+
+# INDUSTRY_4 — Siemens/Romania (with OT policy update for NL→Rego translation)
+./tools/simulate_t54.sh --no-consume \
+  --event-id evt-sie-001 --pilot Siemens_RO \
+  --actions isolate_plc,revoke_ot_session,notify_soc,update_zt_policy \
+  --confidence 0.91 \
+  --policy "Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"
+```
+
+Run `./tools/simulate_t54.sh --help` for the full option reference.
 
 ---
 
