@@ -60,7 +60,7 @@ class LLMParser:
         # Ensure required fields have sensible defaults
         event_id = fields.get("event_id") or str(uuid.uuid4())
         event_type = fields.get("type") or "UNKNOWN_EVENT"
-        pilot = fields.get("pilot") or "TELECOM"
+        pilot = fields.get("pilot") or "UNKNOWN"
         severity = fields.get("severity") or "MEDIUM"
 
         # Parse timestamp

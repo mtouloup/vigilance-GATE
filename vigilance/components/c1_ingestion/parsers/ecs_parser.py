@@ -31,10 +31,18 @@ class ECSParser:
         severity_raw = raw.get("event.severity", raw.get("log.level", "medium"))
         severity = self._map_severity(str(severity_raw))
 
-        # Determine pilot
-        pilot = raw.get("agent.type", raw.get("observer.type", "TELECOM")).upper()
-        if pilot not in ("TELECOM", "INDUSTRY_4"):
+        # Determine pilot from ECS agent/observer type field
+        pilot_raw = raw.get("agent.type", raw.get("observer.type", "")).upper()
+        if any(kw in pilot_raw for kw in ("OTE", "TELECOM", "SOC")):
             pilot = "TELECOM"
+        elif any(kw in pilot_raw for kw in ("SIEMENS", "SCADA", "OT", "ICS", "INDUSTRY")):
+            pilot = "INDUSTRY_4"
+        elif any(kw in pilot_raw for kw in ("PORT", "MARITIME", "AIS", "VESSEL")):
+            pilot = "MARITIME"
+        elif any(kw in pilot_raw for kw in ("BANK", "FINANCE", "FRAUD", "CAIX")):
+            pilot = "FINANCE"
+        else:
+            pilot = "UNKNOWN"
 
         src_ip = (
             raw.get("source.ip")
