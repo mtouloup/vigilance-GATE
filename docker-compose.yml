@@ -8,9 +8,9 @@ version: "3.9"
 #   ollama-init    One-shot model downloader (exits after pull)
 #   vigilance-gate The Agentic Wrapper Framework (T5.3)
 #
-# Sector selection (default: TELECOM):
-#   VIGILANCE_SECTOR=TELECOM     docker compose up   # OTE / Greece
-#   VIGILANCE_SECTOR=INDUSTRY_4  docker compose up   # Siemens / Romania
+# T5.3 is a single multi-pilot container — all four GA pilots are served
+# simultaneously (TELECOM, MARITIME, FINANCE, INDUSTRY_4). Pilot detection
+# happens per-event in C1; no sector selection needed at startup.
 #
 # Model storage:
 #   Models are stored in the Docker-managed 'ollama_data' volume by default
@@ -86,15 +86,12 @@ services:
     restart: "no"
 
   # ── T5.3 Agentic Wrapper Framework ───────────────────────────────────────────
-  # This is the single framework container as described in the VIGILANCE GA.
-  # Set VIGILANCE_SECTOR to select the active pilot environment:
-  #   TELECOM     → OTE pilot (Greece) — default
-  #   INDUSTRY_4  → Siemens pilot (Romania)
+  # Single multi-pilot container — all four GA pilots handled simultaneously.
+  # Pilot is detected per-event in C1 (parsers + LLM); no sector env var needed.
   vigilance-gate:
     build: .
     container_name: vigilance-gate
     environment:
-      VIGILANCE_SECTOR: ${VIGILANCE_SECTOR:-TELECOM}
       VIGILANCE_MODE: ${VIGILANCE_MODE:-STANDALONE}
       AMQP_URL: amqp://vigilance:vigilance@rabbitmq:5672/
       OLLAMA_BASE_URL: http://ollama:11434

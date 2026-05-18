@@ -42,7 +42,13 @@ Field-specific rules:
   Return null unless the text explicitly mentions telecom/network operators, maritime/vessel/port,
   banking/finance/fraud, or industrial control systems/OT/SCADA/PLC.
 - "severity": must be one of LOW, MEDIUM, HIGH, CRITICAL. Return null if not inferable.
+- "ot_protocol": only for industrial OT protocols (OPC-UA, Modbus, DNP3, IEC-104). Return null
+  for telecom protocols (SS7, Diameter, SIP) or any non-OT protocol.
+- "ot_safety_flag": true only if the text explicitly mentions a safety system or OT safety risk.
 - All numeric fields (count, nodes_affected, fraud_score): return null if not present in text.
+- Cross-pilot fields: return null for fields that belong to a different sector than the event.
+  E.g. vessel_id/port_zone/ais_mmsi for non-maritime events; plc_id/scada_zone for non-OT events;
+  account_id/fraud_score for non-finance events; subscriber_id/imsi for non-telecom events.
 
 No prose, no markdown, no explanation — JSON object only.
 """

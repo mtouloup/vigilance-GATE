@@ -23,20 +23,22 @@ reasoning, enforces safety guardrails, and executes remediation actions:
 | #3 | FINANCE | CaixaBank_ES (Spain) | Account takeover, payment fraud, insider threats |
 | #4 | INDUSTRY_4 | Siemens_RO (Romania) | OT anomalies, PLC lateral movement, SCADA zone isolation |
 
-The active pilot is selected at startup via `VIGILANCE_SECTOR`. The pipeline (C1→C2→C5→C3→C4→C5)
-is identical for all sectors — what changes is the Sector Profile (C6) and the C4 tool plugins.
+T5.3 is a **single multi-pilot container** that serves all four GA pilots simultaneously. Pilot
+detection happens in C1 (parser heuristics + LLM fallback); the correct Sector Profile (C6) and
+C4 tool adapter set are then selected per-event automatically. No configuration change or restart
+is needed to switch between pilots — all four profiles and adapter sets are loaded at startup.
 
 ---
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │  C6 — Sector Profile Manager             │
-                    │  VIGILANCE_SECTOR = TELECOM|MARITIME|FINANCE|INDUSTRY_4  │
-                    │  Injects: schema · plugins · LLM prompt  │
-                    └──────────────┬──────────────────────────┘
-                                   │ config
+                    ┌──────────────────────────────────────────────────────┐
+                    │  C6 — Sector Profile Manager (all 4 loaded at startup) │
+                    │  TELECOM · MARITIME · FINANCE · INDUSTRY_4             │
+                    │  Selected per-event from detected pilot in C1          │
+                    └──────────────┬───────────────────────────────────────-─┘
+                                   │ profile (per event)
    Message Broker                  ▼
    pilot.events.raw  ──►  C1  Ingestion & Normalization
                               CEF · ECS · OT JSON · Syslog · LLM fallback
@@ -186,16 +188,11 @@ Startup order enforced by healthchecks:
 | `vigilance-rabbitmq` | RabbitMQ 3.13 — queues pre-declared at startup |
 | `vigilance-ollama` | Ollama LLM server — serves mistral:7b and mistral-nemo |
 | `vigilance-ollama-init` | One-shot model downloader (exits after pull) |
-| `vigilance-gate` | **T5.3 Agentic Wrapper Framework** — active sector set by `VIGILANCE_SECTOR` |
+| `vigilance-gate` | **T5.3 Agentic Wrapper Framework** — serves all four GA pilots in a single container |
 
-### Switch sector
-
-```bash
-VIGILANCE_SECTOR=TELECOM     docker compose up --build   # Pilot #1 — OTE / Greece (default)
-VIGILANCE_SECTOR=MARITIME    docker compose up --build   # Pilot #2 — Port of Rotterdam / Netherlands
-VIGILANCE_SECTOR=FINANCE     docker compose up --build   # Pilot #3 — CaixaBank / Spain
-VIGILANCE_SECTOR=INDUSTRY_4  docker compose up --build   # Pilot #4 — Siemens / Romania
-```
+No sector switch is needed. All four profiles (TELECOM, MARITIME, FINANCE, INDUSTRY_4) and their
+C4 adapter sets are loaded at startup. The correct profile is selected per-event based on the
+pilot detected by C1.
 
 ### Reuse models already on your host
 
@@ -395,10 +392,9 @@ docker run -d --name rabbitmq \
   rabbitmq:3.13-management-alpine
 ```
 
-**Step 3** — Start a sector worker:
+**Step 3** — Start the T5.3 service (handles all pilots):
 
 ```bash
-VIGILANCE_SECTOR=TELECOM \
 AMQP_URL=amqp://vigilance:vigilance@localhost:5672/ \
 OLLAMA_BASE_URL=http://localhost:11434 \
 python -m vigilance.service
@@ -411,11 +407,11 @@ The pipeline supports two simulation modes (no real tool calls executed):
 ```python
 from vigilance.pipeline import T53Pipeline
 
-# Dry-run: logs all decisions and actions, executes nothing
-pipeline = T53Pipeline(sector="TELECOM", dry_run=True)
+# Dry-run: logs all decisions and actions, executes nothing (all pilots)
+pipeline = T53Pipeline(dry_run=True)
 
-# Digital twin: accepts synthetic events from WP3 D-VISOR
-pipeline = T53Pipeline(sector="INDUSTRY_4", simulation_mode=True)
+# Digital twin: accepts synthetic events from WP3 D-VISOR (all pilots)
+pipeline = T53Pipeline(simulation_mode=True)
 ```
 
 ---
@@ -424,7 +420,6 @@ pipeline = T53Pipeline(sector="INDUSTRY_4", simulation_mode=True)
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIGILANCE_SECTOR` | `TELECOM` | Active sector profile: `TELECOM` \| `MARITIME` \| `FINANCE` \| `INDUSTRY_4` |
 | `VIGILANCE_MODE` | `STANDALONE` | Pipeline mode: `STANDALONE` or `INTEGRATED` (see below) |
 | `AMQP_URL` | *(unset)* | RabbitMQ AMQP URL. Unset → in-memory broker (tests/local) |
 | `OLLAMA_BASE_URL` | *(unset)* | Ollama API URL. Unset → StubLLMProvider (tests/local). Docker: `http://ollama:11434` |
@@ -644,7 +639,7 @@ C5 ──[rule checks: confidence / IP range / proportionality / OT safety]
 ### What is guaranteed (GA promises fulfilled)
 
 - **mistral:7b in C1**: The `LLMParser` fallback calls `llm.extract_fields()` which routes to the fast model. This handles free-text alerts, unknown SIEM formats, and future pilot log schemas without schema changes.
-- **Pilot resolution**: Parsers (CEF, ECS, syslog, LLM) emit `pilot="UNKNOWN"` when the payload does not contain sector-specific keywords. The `Normalizer._enrich_with_profile()` is the single authoritative step that resolves `UNKNOWN` → `VIGILANCE_SECTOR` value from the deployed profile. This ensures all four sectors (TELECOM, MARITIME, FINANCE, INDUSTRY_4) are handled correctly without any parser hardcoding a default sector. The OT JSON parser is the only exception: it explicitly emits `INDUSTRY_4` because its `can_parse()` check requires `plc`/`protocol` keys that are inherently OT-specific.
+- **Pilot resolution**: T5.3 is a single multi-pilot instance. Parsers (CEF, ECS, syslog, LLM) detect the pilot from event content and emit `pilot="UNKNOWN"` when no sector-specific keywords are present. `T53Pipeline._profile_for(pilot)` then selects the matching `SectorProfile` and C4 adapter set per-event. If pilot remains `UNKNOWN` after C1 (e.g. completely ambiguous free text), a warning is logged and the TELECOM profile is used as a last resort. The OT JSON parser is the only parser that hard-codes `pilot="INDUSTRY_4"` — its `can_parse()` is gated on `plc`/`protocol` keys that are inherently OT-specific.
 - **mistral-nemo in C2**: `AgentLoop` calls `llm.complete()` in a multi-turn loop (up to 10 turns, configurable). Each turn the model either calls a tool or produces a final decision. The RAME co-pilot integration for INDUSTRY_4 is provided via the sector-specific C2 system prompt in `profiles/industry4.yaml`.
 - **mistral:7b in C5 semantic guardrail**: `SafetyGate._semantic_review()` calls `llm.semantic_check()` using the fast model for borderline cases — not the heavy reasoning model — keeping latency low for the most time-sensitive path.
 - **mistral-nemo in C3 NL→Rego**: `PolicyTranslator` calls `llm.complete()` to generate OPA/Rego policy rules for ZTA enforcement, triggered when the AgentDecision includes a `policy_update` field.
