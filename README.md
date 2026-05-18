@@ -497,8 +497,8 @@ VIGILANCE_MODE=INTEGRATED docker compose up --build
   'CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH'
 
 # Step 3 — simulate T5.4 consuming the CanonicalEvent and dispatching ActionRequest
-./tools/simulate_t54.sh
-# auto-mode: reads event_id + pilot from t53.canonical_events, picks correct actions
+# Use --purge to clear any stale events from a previous run (avoids event_id mismatch)
+./tools/simulate_t54.sh --purge
 
 # Step 4 — check the ExecutionResult in t53.results
 docker exec vigilance-rabbitmq \
