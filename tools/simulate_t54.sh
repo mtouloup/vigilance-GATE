@@ -12,7 +12,8 @@
 # This script simulates step 3 — it can either:
 #   a) Auto-mode (default): consume the next CanonicalEvent from t53.canonical_events
 #      and derive a realistic ActionRequest for that sector
-#   b) Manual mode (--event-id / --pilot / --actions): publish a hand-crafted request
+#   b) Manual mode (--no-consume + --event-id / --pilot / --actions): publish a
+#      hand-crafted request without consuming from the queue
 #
 # Usage:
 #   ./tools/simulate_t54.sh [OPTIONS]
@@ -28,8 +29,14 @@
 #   --confidence FLOAT      Agent confidence 0.0-1.0   (default: 0.92)
 #   --policy TEXT           NL policy update string    (default: none)
 #   --no-consume            Skip consuming from t53.canonical_events; use --event-id
+#   --purge                 Purge t53.canonical_events before waiting (clears stale events)
 #   --wait SECS             Wait N seconds for a CanonicalEvent before giving up (default: 30)
 #   --help                  Show this help and exit
+#
+# Tip — avoiding stale event_id mismatches:
+#   If you see "not in cache" warnings it means a stale CanonicalEvent was sitting
+#   in the queue from a previous run. Use --purge to clear the queue first:
+#     ./tools/simulate_t54.sh --purge
 #
 # Workflow:
 #   Step 1: Start the stack in INTEGRATED mode
@@ -41,7 +48,7 @@
 #   Step 3: Run this script to simulate T5.4 dispatching an ActionRequest
 #           ./tools/simulate_t54.sh
 #
-#   Step 4: Check the result in t53.results
+#   Step 4: Check the ExecutionResult in t53.results
 #           docker exec vigilance-rabbitmq rabbitmqadmin get queue=t53.results ackmode=ack_requeue_true
 #
 # Examples:
@@ -49,25 +56,28 @@
 #   # Auto-mode: consume next CanonicalEvent and dispatch matching ActionRequest
 #   ./tools/simulate_t54.sh
 #
-#   # Manual: dispatch a TELECOM ActionRequest without consuming from the queue
+#   # Auto-mode with queue purge (recommended if you see event_id mismatch warnings)
+#   ./tools/simulate_t54.sh --purge
+#
+#   # Manual: TELECOM — OTE/Greece
 #   ./tools/simulate_t54.sh --no-consume \
 #     --event-id evt-ote-001 --pilot OTE_GR \
 #     --actions block_ip,revoke_session,notify_soc \
 #     --confidence 0.96
 #
-#   # Manual: dispatch a MARITIME ActionRequest
+#   # Manual: MARITIME — Port of Rotterdam
 #   ./tools/simulate_t54.sh --no-consume \
 #     --event-id evt-rot-001 --pilot Rotterdam_NL \
 #     --actions block_vessel_access,quarantine_cargo_system,notify_port_authority,notify_soc \
 #     --confidence 0.88
 #
-#   # Manual: dispatch a FINANCE ActionRequest
+#   # Manual: FINANCE — CaixaBank
 #   ./tools/simulate_t54.sh --no-consume \
 #     --event-id evt-cai-001 --pilot CaixaBank_ES \
 #     --actions freeze_account,block_transaction,notify_fraud_team,notify_soc \
 #     --confidence 0.93
 #
-#   # Manual: dispatch an INDUSTRY_4 ActionRequest with OT policy update
+#   # Manual: INDUSTRY_4 — Siemens/Romania (with OT policy update for NL→Rego)
 #   ./tools/simulate_t54.sh --no-consume \
 #     --event-id evt-sie-001 --pilot Siemens_RO \
 #     --actions isolate_plc,revoke_ot_session,notify_soc,update_zt_policy \
@@ -88,6 +98,7 @@ OVERRIDE_EVENT_ID=""
 OVERRIDE_PILOT=""
 OVERRIDE_ACTIONS=""
 NO_CONSUME=false
+PURGE=false
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 usage() {
@@ -108,6 +119,7 @@ while [[ $# -gt 0 ]]; do
     --policy)         POLICY="$2";            shift 2 ;;
     --wait)           WAIT_SECS="$2";         shift 2 ;;
     --no-consume)     NO_CONSUME=true;        shift ;;
+    --purge)          PURGE=true;             shift ;;
     --help)           usage ;;
     --)               shift; break ;;
     -*)               echo "Unknown option: $1" >&2; exit 1 ;;
@@ -143,6 +155,19 @@ default_actions_for_pilot() {
   esac
 }
 
+# ── Optional: purge stale events from t53.canonical_events ───────────────────
+if [[ "$PURGE" == "true" && "$NO_CONSUME" == "false" ]]; then
+  echo "Purging stale events from t53.canonical_events..."
+  PURGE_RESP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -u "$AUTH" -X DELETE \
+    "${MGMT_BASE}/api/queues/%2F/t53.canonical_events/contents")
+  if [[ "$PURGE_RESP" == "204" ]]; then
+    echo "Queue purged. Waiting for fresh CanonicalEvent from T5.3..."
+  else
+    echo "Warning: purge returned HTTP ${PURGE_RESP} — continuing anyway." >&2
+  fi
+fi
+
 # ── Step 1: consume a CanonicalEvent from t53.canonical_events ─────────────────
 EVENT_ID=""
 PILOT=""
@@ -159,13 +184,14 @@ if [[ "$NO_CONSUME" == "false" ]]; then
       -d '{"count":1,"ackmode":"ack_requeue_false","encoding":"auto","truncate":50000}' \
       2>/dev/null || echo "[]")
 
-    COUNT=$(echo "$RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d))" 2>/dev/null || echo 0)
+    COUNT=$(echo "$RESPONSE" | python3 -c \
+      "import json,sys; d=json.load(sys.stdin); print(len(d))" 2>/dev/null || echo 0)
+
     if [[ "$COUNT" -gt 0 ]]; then
       CANONICAL_JSON=$(echo "$RESPONSE" | python3 -c "
 import json, sys
 msgs = json.load(sys.stdin)
 payload = msgs[0]['payload']
-# payload may be a JSON string or already a dict
 if isinstance(payload, str):
     print(payload)
 else:
@@ -178,16 +204,21 @@ else:
 
   if [[ -z "$CANONICAL_JSON" ]]; then
     echo "No CanonicalEvent received within ${WAIT_SECS}s." >&2
-    echo "Tip: send a raw event first with ./tools/publish_event.sh, then re-run this script." >&2
-    echo "     Or use --no-consume with --event-id and --pilot to dispatch manually." >&2
+    echo "" >&2
+    echo "Possible causes:" >&2
+    echo "  • No raw event has been sent yet — run ./tools/publish_event.sh first" >&2
+    echo "  • Stack is in STANDALONE mode — restart with VIGILANCE_MODE=INTEGRATED" >&2
+    echo "  • T5.3 is still processing — increase --wait" >&2
+    echo "" >&2
+    echo "Or use --no-consume with --event-id and --pilot for manual dispatch." >&2
     exit 1
   fi
 
-  echo "Received CanonicalEvent:"
+  echo "Received CanonicalEvent from t53.canonical_events:"
   echo "$CANONICAL_JSON" | python3 -m json.tool 2>/dev/null || echo "$CANONICAL_JSON"
   echo ""
 
-  # Extract event_id and pilot from the CanonicalEvent
+  # Extract event_id and pilot
   EVENT_ID=$(echo "$CANONICAL_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
@@ -197,7 +228,6 @@ print(d.get('event_id', ''))
   PILOT=$(echo "$CANONICAL_JSON" | python3 -c "
 import json, sys
 d = json.load(sys.stdin)
-# pilot field may be sector name or pilot name; map sector→pilot
 mapping = {
     'TELECOM':    'OTE_GR',
     'MARITIME':   'Rotterdam_NL',
@@ -224,9 +254,8 @@ fi
 
 # ── Step 3: determine actions ──────────────────────────────────────────────────
 if [[ -n "$OVERRIDE_ACTIONS" ]]; then
-  # Convert comma-separated string to JSON array
   ACTIONS_JSON=$(python3 -c "
-import sys, json
+import json
 actions = [a.strip() for a in '${OVERRIDE_ACTIONS}'.split(',') if a.strip()]
 print(json.dumps(actions))
 ")
@@ -238,23 +267,9 @@ fi
 REQUEST_ID="req-t54-sim-$(date +%s)-$$"
 
 # ── Step 5: build ActionRequest payload ───────────────────────────────────────
-if [[ -n "$POLICY" ]]; then
-  POLICY_JSON=$(python3 -c "import json; print(json.dumps('${POLICY}'))")
-  ACTION_REQUEST=$(python3 -c "
+ACTION_REQUEST=$(python3 -c "
 import json
-d = {
-    'request_id':       '${REQUEST_ID}',
-    'event_id':         '${EVENT_ID}',
-    'pilot':            '${PILOT}',
-    'actions':          ${ACTIONS_JSON},
-    'policy_update':    ${POLICY_JSON},
-    'agent_confidence': ${CONFIDENCE},
-}
-print(json.dumps(d))
-")
-else
-  ACTION_REQUEST=$(python3 -c "
-import json
+
 d = {
     'request_id':       '${REQUEST_ID}',
     'event_id':         '${EVENT_ID}',
@@ -262,30 +277,14 @@ d = {
     'actions':          ${ACTIONS_JSON},
     'agent_confidence': ${CONFIDENCE},
 }
+policy = '''${POLICY}'''
+if policy.strip():
+    d['policy_update'] = policy
 print(json.dumps(d))
 ")
-fi
 
 # ── Step 6: publish to t53.action_requests ────────────────────────────────────
-PAYLOAD_ESCAPED=$(python3 -c "import json,sys; print(json.dumps('${ACTION_REQUEST}'.replace(chr(39), chr(39))))" 2>/dev/null \
-  || python3 -c "import json; print(json.dumps('''${ACTION_REQUEST}'''))")
-
-BODY=$(cat <<EOF
-{
-  "routing_key": "t53.action_requests",
-  "payload": $(python3 -c "import json; print(json.dumps(${ACTION_REQUEST!Q} if False else '''dummy'''))" 2>/dev/null \
-    || python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$ACTION_REQUEST"),
-  "payload_encoding": "string",
-  "properties": {
-    "delivery_mode": 2,
-    "content_type": "application/json"
-  }
-}
-EOF
-)
-
-# Rebuild BODY cleanly using python3 to avoid quoting issues
-BODY=$(python3 -c "
+ENVELOPE=$(python3 -c "
 import json
 action_request = json.loads('''${ACTION_REQUEST}''')
 envelope = {
@@ -300,7 +299,7 @@ envelope = {
 print(json.dumps(envelope))
 ")
 
-echo "Dispatching ActionRequest (simulating T5.4 orchestrator):"
+echo "Dispatching ActionRequest to t53.action_requests (simulating T5.4 orchestrator):"
 echo "$ACTION_REQUEST" | python3 -m json.tool 2>/dev/null || echo "$ACTION_REQUEST"
 echo ""
 
@@ -308,17 +307,18 @@ HTTP_STATUS=$(curl -s -o /tmp/vigilance_t54_response.txt -w "%{http_code}" \
   -u "$AUTH" \
   -H "Content-Type: application/json" \
   -X POST "${MGMT_BASE}/api/exchanges/%2F/amq.default/publish" \
-  -d "$BODY")
+  -d "$ENVELOPE")
 
 RESPONSE=$(cat /tmp/vigilance_t54_response.txt)
 
 if [[ "$HTTP_STATUS" == "200" ]]; then
-  ROUTED=$(echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("routed","unknown"))' 2>/dev/null || echo "unknown")
-  echo "ActionRequest published to t53.action_requests (routed=${ROUTED})"
+  ROUTED=$(echo "$RESPONSE" | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); print(d.get("routed","unknown"))' 2>/dev/null || echo "unknown")
+  echo "ActionRequest published (routed=${ROUTED})"
   echo ""
   echo "T5.3 will now run: C5 guardrail → C3+C4 execution → t53.results"
   echo ""
-  echo "Check the result:"
+  echo "Check the ExecutionResult:"
   echo "  docker exec vigilance-rabbitmq rabbitmqadmin get queue=t53.results ackmode=ack_requeue_true"
 else
   echo "Error: HTTP ${HTTP_STATUS}" >&2
