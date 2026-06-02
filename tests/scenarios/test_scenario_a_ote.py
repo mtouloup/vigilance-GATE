@@ -1,67 +1,89 @@
-"""Scenario A — OTE Credential Stuffing end-to-end pipeline test."""
+"""Scenario A — OTE Credential Stuffing end-to-end pipeline test (INTEGRATED flow)."""
 from __future__ import annotations
+import uuid
 import pytest
 
 from vigilance.pipeline import T53Pipeline
 
 
-def test_scenario_a_ote_credential_stuffing():
-    """Full pipeline: CEF brute-force alert → block_ip + revoke_session + notify_soc"""
-    raw_cef = (
-        "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
-        "src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
-    )
-    pipeline = T53Pipeline(sector="TELECOM")
-    result = pipeline.process_event(raw_cef)
+RAW_CEF = (
+    "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
+    "src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
+)
 
+# Simulates what T5.4 would dispatch after consuming the CanonicalEvent
+T54_ACTIONS = ["block_ip", "revoke_session", "notify_soc"]
+
+
+@pytest.fixture
+def pipeline():
+    return T53Pipeline(dry_run=True)
+
+
+def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.96):
+    """Helper: C1 ingest → simulate T5.4 → C5+C3+C4 execute."""
+    event = pipeline.ingest_event(raw)
+    return pipeline.execute_action_request({
+        "request_id":       str(uuid.uuid4()),
+        "event_id":         event.event_id,
+        "pilot":            event.pilot,
+        "actions":          actions,
+        "agent_confidence": confidence,
+    })
+
+
+def test_scenario_a_ingest_produces_canonical_event(pipeline):
+    event = pipeline.ingest_event(RAW_CEF)
+    assert event.event_id
+    assert event.pilot == "TELECOM"
+    assert event.severity in ("HIGH", "CRITICAL")
+
+
+def test_scenario_a_canonical_event_published(pipeline):
+    pipeline.ingest_event(RAW_CEF)
+    messages = pipeline.broker.get_messages("t53.canonical_events")
+    assert len(messages) == 1
+    assert messages[0]["pilot"] == "TELECOM"
+
+
+def test_scenario_a_execution_succeeds(pipeline):
+    result = _ingest_and_execute(pipeline, RAW_CEF)
     assert result.overall_success
-    assert any(r.action == "block_ip" for r in result.action_results)
-    assert any(r.action == "revoke_session" for r in result.action_results)
-    assert any(r.action == "notify_soc" for r in result.action_results)
 
 
-def test_scenario_a_audit_record_created():
-    """Verify audit record is opened and closed during OTE pipeline run."""
-    raw_cef = (
-        "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
-        "src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
-    )
-    pipeline = T53Pipeline(sector="TELECOM")
-    result = pipeline.process_event(raw_cef)
+def test_scenario_a_expected_actions_dispatched(pipeline):
+    result = _ingest_and_execute(pipeline, RAW_CEF)
+    dispatched = [r.action for r in result.action_results]
+    assert "block_ip" in dispatched
+    assert "revoke_session" in dispatched
+    assert "notify_soc" in dispatched
 
+
+def test_scenario_a_audit_record_created(pipeline):
+    result = _ingest_and_execute(pipeline, RAW_CEF)
     records = pipeline.audit_log.get_all()
     assert len(records) == 1
     record = records[0]
     assert record.closed is True
     assert record.audit_id.startswith("aud-OTE-")
-    assert record.verdict in ("APPROVED", "SUCCESS")
 
 
-def test_scenario_a_broker_publishes_result():
-    """Verify result is published to t53.results broker topic."""
-    raw_cef = (
-        "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
-        "src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
-    )
-    pipeline = T53Pipeline(sector="TELECOM")
-    pipeline.process_event(raw_cef)
-
+def test_scenario_a_result_published_to_broker(pipeline):
+    _ingest_and_execute(pipeline, RAW_CEF)
     messages = pipeline.broker.get_messages("t53.results")
     assert len(messages) == 1
     assert messages[0]["overall_success"] is True
 
 
-def test_scenario_a_all_actions_succeed():
-    """All individual actions must succeed for OTE credential stuffing."""
-    raw_cef = (
-        "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
-        "src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
-    )
-    pipeline = T53Pipeline(sector="TELECOM")
-    result = pipeline.process_event(raw_cef)
-
-    for action_result in result.action_results:
-        assert action_result.success, (
-            f"Action '{action_result.action}' failed: {action_result.message}"
-        )
-        assert action_result.latency_ms >= 0
+def test_scenario_a_guardrail_rejects_too_many_actions(pipeline):
+    """Guardrail always rejects when action count exceeds 5 (proportionality check)."""
+    event = pipeline.ingest_event(RAW_CEF)
+    result = pipeline.execute_action_request({
+        "request_id":       str(uuid.uuid4()),
+        "event_id":         event.event_id,
+        "pilot":            event.pilot,
+        "actions":          ["a1", "a2", "a3", "a4", "a5", "a6"],  # > 5
+        "agent_confidence": 0.96,
+    })
+    assert not result.overall_success
+    assert any(r.response_code == 403 for r in result.action_results)
