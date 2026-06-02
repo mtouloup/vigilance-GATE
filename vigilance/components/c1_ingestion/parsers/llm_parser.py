@@ -10,7 +10,7 @@ from vigilance.models.canonical_event import CanonicalEvent
 _VALID_PILOTS = {"TELECOM", "MARITIME", "FINANCE", "INDUSTRY_4"}
 
 _CANONICAL_FIELDS = [
-    "event_id", "type", "pilot", "severity",
+    "type", "pilot", "severity",
     "src_ip", "target", "count", "nodes_affected",
     "subscriber_id", "cell_id", "imsi",
     "plc_id", "line_id", "scada_zone", "ot_protocol", "ot_safety_flag",
@@ -70,8 +70,8 @@ class LLMParser:
         raw_text = str(raw) if not isinstance(raw, str) else raw
         fields = self._llm.extract_fields(raw_text, _CANONICAL_FIELDS)
 
-        # Ensure required fields have sensible defaults
-        event_id = self._to_str(fields.get("event_id")) or str(uuid.uuid4())
+        # event_id is always a T5.3-generated UUID — never extracted from content
+        event_id = str(uuid.uuid4())
         event_type = self._to_str(fields.get("type")) or "UNKNOWN_EVENT"
         pilot_raw = (self._to_str(fields.get("pilot")) or "").strip().upper()
         pilot = pilot_raw if pilot_raw in _VALID_PILOTS else "UNKNOWN"

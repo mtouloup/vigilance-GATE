@@ -13,8 +13,9 @@ operational execution bridge between the WP5 intelligence layer (T5.1 RAG, T5.2 
 T5.4 orchestration) and the real cybersecurity tools deployed across all four VIGILANCE pilot
 environments.
 
-It provides a 6-component pipeline that ingests raw security events, applies agentic LLM-driven
-reasoning, enforces safety guardrails, and executes remediation actions:
+It provides a 6-component pipeline that ingests raw security events, enforces safety guardrails,
+and executes remediation actions — operating exclusively in **INTEGRATED mode** alongside T5.4
+(orchestration) and T5.5 (ZTA blueprint refinement):
 
 | Pilot | Sector | Partner | Threats |
 |---|---|---|---|
@@ -37,35 +38,37 @@ is needed to switch between pilots — all four profiles and adapter sets are lo
                     │  C6 — Sector Profile Manager (all 4 loaded at startup) │
                     │  TELECOM · MARITIME · FINANCE · INDUSTRY_4             │
                     │  Selected per-event from detected pilot in C1          │
-                    └──────────────┬───────────────────────────────────────-─┘
+                    └──────────────┬────────────────────────────────────────┘
                                    │ profile (per event)
    Message Broker                  ▼
    pilot.events.raw  ──►  C1  Ingestion & Normalization
                               CEF · ECS · OT JSON · Syslog · LLM fallback
                                    │ CanonicalEvent
                                    ▼
-                          C2  Agentic Layer  (Mistral Nemo 12B)
-                              multi-turn tool-calling loop
-                              RAME co-pilot for Siemens Pilot #4
-                                   │ AgentDecision
-                                   ▼
-                          C5  Safety Gate  (Mistral 7B)
-                              confidence · protected IP · proportionality
-                              OT safety gate (Siemens only)
-                                   │ GuardrailCheck → APPROVED / REJECTED / ESCALATE
-                                   ▼
-                          C3  Action & Policy Execution
-                              NL → OPA/Rego policy translation
+                          t53.canonical_events  ──►  T5.4 Orchestrator
+                                                         │ (calls T5.1 RAG, selects T5.2 agent)
+                                                         ▼
+   Message Broker                          t53.action_requests
+   t53.action_requests  ──────────────────────────────────┘
                                    │ ActionRequest
                                    ▼
-                          C4  Tool Adapter Layer  (no LLM)
-                              OTE:       SIEM · IAM · IDS
-                              Rotterdam: Port SIEM · Port IAM · Port Ops
-                              CaixaBank: Bank SIEM · Bank IAM · Fraud Engine
-                              Siemens:   SIEM · IAM · SCADA/OPC-UA
-                                   │ ExecutionResult
+                          C5  Safety Gate  (Mistral 7B — ESCALATE only)
+                              confidence · protected IP · proportionality
+                              OT safety gate (INDUSTRY_4)
+                                   │ GuardrailCheck → APPROVED / REJECTED / ESCALATE
                                    ▼
-                          C5  Audit Log
+                          C3  Action & Policy Execution  (Mistral Nemo — conditional)
+                              NL → OPA/Rego policy translation (if policy_update present)
+                                   │
+                                   ├──► t53.policy_updates  ──► T5.5 ZTA blueprint refinement
+                                   ├──► t53.actions.dispatch  ──► pilot tools (fire-and-forget)
+                                   │       C4  Tool Adapter Layer  (no LLM)
+                                   │           OTE:       SIEM · IAM · IDS
+                                   │           Rotterdam: Port SIEM · Port IAM · Port Ops
+                                   │           CaixaBank: Bank SIEM · Bank IAM · Fraud Engine
+                                   │           Siemens:   SIEM · IAM · SCADA/OPC-UA
+                                   ▼
+                          C5  Audit Log + ExecutionResult
                               immutable · aud-OTE-* / aud-ROT-* / aud-CAI-* / aud-SIE-*
                                    │
    Message Broker  ◄──────────────┘
@@ -78,19 +81,20 @@ is needed to switch between pilots — all four profiles and adapter sets are lo
 
 | ID | Component | LLM | Role |
 |---|---|---|---|
-| C1 | Event Ingestion & Normalization | Mistral 7B (fallback only) | Parses CEF, ECS, syslog, OT JSON → `CanonicalEvent` |
-| C2 | Agentic Interaction Layer | Mistral Nemo 12B | Multi-turn tool-calling loop; RAME co-pilot for Siemens |
-| C3 | Action & Policy Execution | Mistral Nemo 12B (conditional) | Dispatches `ActionRequest`; translates NL → OPA/Rego |
-| C4 | Tool Adapter Layer | None | Plugin-based deterministic API calls to pilot tools |
-| C5 | Safety, Audit & Simulation | Mistral 7B (partial) | Pre-execution guardrail · immutable audit log · dry-run/digital twin |
+| C1 | Event Ingestion & Normalization | Mistral 7B (fallback only) | Parses CEF, ECS, syslog, OT JSON → `CanonicalEvent`; publishes to `t53.canonical_events` |
+| C3 | Action & Policy Execution | Mistral Nemo 12B (conditional) | Receives `ActionRequest` from T5.4; translates NL → OPA/Rego if `policy_update` present |
+| C4 | Tool Adapter Layer | None | Plugin-based deterministic API calls to pilot tools (fire-and-forget via `t53.actions.dispatch`) |
+| C5 | Safety Gate & Audit | Mistral 7B (ESCALATE only) | Pre-execution guardrail (confidence · IP range · proportionality · OT safety) + immutable audit log |
 | C6 | Sector Profile Manager | N/A | Cross-cutting config: loads YAML profile at startup, injects into all components |
 
 ### LLM models
 
-| Model | Size | Used by | Purpose |
+| Model | Size | Used by | When |
 |---|---|---|---|
-| `mistral:7b` | ~4 GB | C1, C5 | Fast extraction of unknown log formats; semantic guardrail on edge cases |
-| `mistral-nemo` | ~7 GB | C2, C3 | Multi-step reasoning, tool-calling, RAME co-pilot, NL→Rego translation |
+| `mistral:7b` | ~4 GB | C1, C5 | C1: only when no deterministic parser matches; C5: only when guardrail returns ESCALATE |
+| `mistral-nemo` | ~7 GB | C3 | Only when the incoming `ActionRequest` includes a `policy_update` NL string |
+
+On the happy path (known log format, APPROVED confidence, no policy update) **zero LLM calls** are made.
 
 Both models are served by **Ollama** and downloaded once into a persistent Docker volume.
 When `OLLAMA_BASE_URL` is not set (local/test mode) the built-in `StubLLMProvider` is used instead —
@@ -120,16 +124,14 @@ vigilance-GATE/
 │   ├── models/                 Pydantic v2 data models
 │   │   ├── canonical_event.py
 │   │   ├── action_request.py
-│   │   ├── agent_decision.py
 │   │   ├── execution_result.py
 │   │   ├── guardrail_check.py
 │   │   └── audit_record.py
 │   └── components/
 │       ├── c1_ingestion/       Normalizer + 5 parsers (CEF, ECS, syslog, OT JSON, LLM)
-│       ├── c2_agentic/         AgentLoop + tool definitions
 │       ├── c3_execution/       ActionExecutor + PolicyTranslator
 │       ├── c4_adapters/        ToolAdapter ABC + 12 plugins (OTE × 3, Rotterdam × 3, CaixaBank × 3, Siemens × 3)
-│       ├── c5_safety/          SafetyGate + AuditLog + SimulationMode
+│       ├── c5_safety/          SafetyGate + AuditLog
 │       └── c6_profiles/        ProfileManager + SectorProfile dataclass
 ├── profiles/                   Sector YAML config files
 │   ├── telecom.yaml            Pilot #1 OTE/GR: plugins, schema extensions, LLM prompt
@@ -171,7 +173,7 @@ RabbitMQ (message broker) and Ollama (LLM server).
 - [Docker Compose](https://docs.docker.com/compose/) v2 (bundled with Docker Desktop)
 - ~12 GB free disk space for LLM models (`mistral:7b` ≈ 4 GB, `mistral-nemo` ≈ 7 GB)
 
-### Start the stack (TELECOM sector — default)
+### Start the stack
 
 ```bash
 docker compose up --build
@@ -410,18 +412,21 @@ For broker-only (no REST API):
 python -m vigilance.service
 ```
 
-### Simulation / dry-run mode
+### Dry-run mode
 
-The pipeline supports two simulation modes (no real tool calls executed):
+The pipeline supports a dry-run flag for development and testing (no real tool calls executed):
 
 ```python
 from vigilance.pipeline import T53Pipeline
 
 # Dry-run: logs all decisions and actions, executes nothing (all pilots)
 pipeline = T53Pipeline(dry_run=True)
+```
 
-# Digital twin: accepts synthetic events from WP3 D-VISOR (all pilots)
-pipeline = T53Pipeline(simulation_mode=True)
+Or via environment variable:
+
+```bash
+VIGILANCE_DRY_RUN=true python -m vigilance.main
 ```
 
 ---
@@ -430,8 +435,7 @@ pipeline = T53Pipeline(simulation_mode=True)
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIGILANCE_MODE` | `STANDALONE` | Pipeline mode: `STANDALONE`, `INTEGRATED`, or `DIGITAL_TWIN` (see below) |
-| `VIGILANCE_SIMULATION` | *(unset)* | Simulation override: `dry_run` (log actions, skip execution) or `digital_twin` (also subscribe to `dt.events.synthetic`) |
+| `VIGILANCE_DRY_RUN` | *(unset)* | Set to `true` to skip real tool execution (logs actions only). Useful for development. |
 | `AMQP_URL` | *(unset)* | RabbitMQ AMQP URL. Unset → in-memory broker (tests/local) |
 | `OLLAMA_BASE_URL` | *(unset)* | Ollama API URL. Unset → StubLLMProvider (tests/local). Docker: `http://ollama:11434` |
 | `OLLAMA_MODELS_DIR` | `ollama_data` (volume) | Override to bind-mount host model cache (e.g. `~/.ollama`) and skip download |
@@ -440,74 +444,40 @@ pipeline = T53Pipeline(simulation_mode=True)
 
 ---
 
-## Pipeline Modes
+## Pipeline Architecture (INTEGRATED)
 
-### STANDALONE (default)
+T5.3 operates exclusively in **INTEGRATED** mode. It has two public pipeline methods:
 
-The full pipeline runs inside `vigilance-gate`: C1 → C2 → C5 → C3+C4.
-C2 uses Mistral Nemo 12B for internal agentic reasoning and produces the ActionRequest itself.
-The CanonicalEvent is also published to `t53.canonical_events` for observability.
+1. **`ingest_event(raw)`** — C1: normalise the raw event into a `CanonicalEvent` and publish to `t53.canonical_events`. T5.4 (orchestrator, lead: GFT) then enriches it with T5.1 RAG context, selects a T5.2 agent, and dispatches an `ActionRequest` back.
 
-```bash
-VIGILANCE_MODE=STANDALONE docker compose up --build
-```
-
-```
-pilot.events.raw ──► C1 normalize ──► C2 reason ──► C5 guardrail ──► C3+C4 execute ──► t53.results
-                                       │
-                                       └──► t53.canonical_events  (observability)
-```
-
-### INTEGRATED (WP5 full workflow)
-
-T5.3 handles only ingestion (C1) and execution (C5+C3+C4).
-T5.4 (orchestrator, lead: GFT) sits in the middle: it consumes CanonicalEvents,
-calls T5.1 RAG for threat context, selects the right agent from T5.2, and dispatches
-the ActionRequest back to T5.3 for guardrail + execution.
-
-```bash
-VIGILANCE_MODE=INTEGRATED docker compose up --build
-```
+2. **`execute_action_request(dict)`** — C5+C3+C4: apply guardrails, optionally translate a NL policy update to OPA/Rego, dispatch actions to pilot tools, write an immutable audit record, and return an `ExecutionResult`.
 
 ```
 pilot.events.raw ──► C1 normalize ──► t53.canonical_events ──► T5.4 orchestrator
-                                                                      │ calls T5.1 RAG (T5.1)
-                                                                      │ selects agent (T5.2)
+                                                                      │ T5.1 RAG + T5.2 agent
                                                                       ▼
 t53.action_requests ◄────────────────────────────── T5.4 dispatches ActionRequest
        │
        ▼
 C5 guardrail ──► C3 policy ──► t53.policy_updates  ──► T5.5 (ZTA blueprint refinement, async)
                     │
-                    └──► t53.actions.dispatch  ──► pilot tools  (fire-and-forget)
-                    │
-                    └──► t53.results  ──► T5.4 closes incident
+                    ├──► t53.actions.dispatch  ──► pilot tools  (fire-and-forget)
+                    └──► t53.results
 ```
 
 T5.3 publishes to `t53.policy_updates` and `t53.actions.dispatch` and returns immediately.
 T5.5 (STAM — ZTA blueprint refinement) and the pilot tools consume in their own time —
 T5.3 is never blocked waiting for them.
 
-| Broker topic | STANDALONE | INTEGRATED |
+| Broker topic | Direction | Description |
 |---|---|---|
-| `pilot.events.raw` | consumed (full pipeline) | consumed (C1 only) |
-| `t53.canonical_events` | published (observability) | published (T5.4 input) |
-| `t53.action_requests` | not used | consumed (T5.4 output → C5+C3+C4) |
-| `t53.policy_updates` | not used | published (C3 → T5.5 ZTA blueprint refinement) |
-| `t53.actions.dispatch` | not used | published (C4 → pilot tools, fire-and-forget) |
-| `t53.results` | published | published |
-| `dt.events.synthetic` | consumed (DIGITAL_TWIN mode) | not used |
-
-### DIGITAL_TWIN (WP3 D-VISOR integration)
-
-Same as STANDALONE but also subscribes to `dt.events.synthetic` — the topic used by
-WP3 STAM/D-VISOR to inject synthetic events for scenario simulation. Enables end-to-end
-pipeline validation without requiring live pilot tool connections.
-
-```bash
-VIGILANCE_MODE=DIGITAL_TWIN docker compose up --build
-# or: VIGILANCE_SIMULATION=digital_twin docker compose up --build
-```
+| `pilot.events.raw` | consumed | Raw events from pilot SIEM/IDS → C1 |
+| `t53.canonical_events` | published | C1 output → T5.4 input |
+| `t53.action_requests` | consumed | T5.4 output → C5+C3+C4 |
+| `t53.policy_updates` | published | C3 NL→Rego output → T5.5 ZTA blueprint refinement |
+| `t53.actions.dispatch` | published | C4 fire-and-forget → pilot tools |
+| `t53.results` | published | ExecutionResult → T5.4 incident closure |
+| `dt.events.synthetic` | (reserved) | WP3 D-VISOR synthetic events (post-M18) |
 
 ---
 
@@ -526,17 +496,17 @@ any external system that cannot use the RabbitMQ broker directly.
 
 ### Endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/health` | Liveness / readiness check — returns loaded pilots and mode |
-| `GET` | `/api/v1/profiles` | List all sector profiles (tool plugins, thresholds, OT flags) |
-| `POST` | `/api/v1/events` | Submit a raw event for full pipeline processing (STANDALONE) or C1 only (INTEGRATED) |
-| `POST` | `/api/v1/action-requests` | Submit an ActionRequest for C5+C3+C4 execution — for T5.4 or external orchestrators |
+| Method | Path | Response | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/health` | 200 | Liveness / readiness check — returns loaded pilots and timestamp |
+| `GET` | `/api/v1/profiles` | 200 | List all sector profiles (tool plugins, thresholds, OT flags) |
+| `POST` | `/api/v1/events` | **202 Accepted** | Submit a raw event — runs C1 normalization and publishes to `t53.canonical_events`; returns `event_id` and detected `pilot` |
+| `POST` | `/api/v1/action-requests` | 200 / 207 | Submit an `ActionRequest` for C5+C3+C4 execution — for T5.4 or external orchestrators; returns `ExecutionResult` |
 
 ### Example — submit event via REST
 
 ```bash
-# STANDALONE mode — returns ExecutionResult synchronously
+# C1 normalization — always returns 202 Accepted with event_id and detected pilot
 curl -X POST http://localhost:8000/api/v1/events \
   -H "Content-Type: application/json" \
   -d '{"raw": "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"}'
@@ -567,8 +537,8 @@ with C5 guardrail + C3+C4 execution.
 **Full walkthrough:**
 
 ```bash
-# Step 1 — start the stack in INTEGRATED mode
-VIGILANCE_MODE=INTEGRATED docker compose up --build
+# Step 1 — start the stack
+docker compose up --build
 
 # Step 2 — send a raw event (T5.3 normalises it and publishes CanonicalEvent)
 ./tools/publish_event.sh \
@@ -691,41 +661,39 @@ two LLM models, in fulfilment of the GA promises for T5.3.
 
 ### Where LLMs are used
 
+T5.3 makes **at most three conditional LLM calls** per event. Zero LLM calls on the happy path.
+
 | Component | Model | When invoked | What it does |
 |---|---|---|---|
-| **C1 — Ingestion** | `mistral:7b` | When CEF/ECS/syslog parsers cannot parse the raw event | Extracts all CanonicalEvent fields (type, severity, pilot, src_ip, target, vessel_id, account_id, etc.) from arbitrary free-text or unknown log formats |
-| **C2 — Agentic Loop** | `mistral-nemo` | Every event | Multi-turn tool-calling loop: calls `query_siem_logs`, `query_iam_sessions`, `query_threat_intel` in sequence, then produces the final `AgentDecision` (threat type + proposed actions + confidence score) |
-| **C3 — Policy Execution** | `mistral-nemo` | When NL→Rego translation is needed | Translates natural-language action descriptions into OPA/Rego policy rules for ZTA enforcement |
-| **C5 — Safety Gate** | `mistral:7b` | When a rule-based guardrail check returns ESCALATE | Semantic second-opinion review: given the proposed actions and the guardrail flags, decides APPROVE or REJECT. Upgrades ESCALATE→APPROVED when proportionate, keeps ESCALATE or downgrades to REJECTED otherwise |
+| **C1 — Ingestion** | `mistral:7b` | Only when CEF/ECS/syslog/OT-JSON parsers all fail | Extracts CanonicalEvent fields (severity, pilot, src_ip, target, etc.) from arbitrary free-text or unknown log formats |
+| **C3 — Policy Execution** | `mistral-nemo` | Only when `ActionRequest.policy_update` is set | Translates the NL policy description into an OPA/Rego rule and publishes to `t53.policy_updates` |
+| **C5 — Safety Gate** | `mistral:7b` | Only when a rule-based guardrail check returns `ESCALATE` | Semantic second-opinion: given the proposed actions and guardrail flags, decides `APPROVE` or `REJECT` |
 
-### LLM call chain per event (STANDALONE mode)
+### LLM call chain per event (INTEGRATED mode)
 
 ```
-Raw event arrives
+ActionRequest arrives from T5.4
       │
       ▼
-C1 ──[mistral:7b, only if needed]──► extract_fields(raw_text, fields) → CanonicalEvent
+C5 ──[rule checks: confidence / IP range / proportionality / OT safety]──► APPROVED / REJECTED
+   ──[mistral:7b, ESCALATE only]──► semantic_check() → APPROVE|REJECT
+      │
+      ▼ (if APPROVED)
+C3 ──[mistral-nemo, only if policy_update present]──► generate_rego_policy()
       │
       ▼
-C2 ──[mistral-nemo, turn 1]──► tool_call: query_siem_logs(target, window_min)
-   ──[mistral-nemo, turn 2]──► tool_call: query_iam_sessions(target)
-   ──[mistral-nemo, turn 3]──► decision: {threat, actions, confidence}
-      │
-      ▼
-C3 ──[mistral-nemo, only if NL→Rego needed]──► generate_rego_policy(nl_description)
-      │
-      ▼
-C5 ──[rule checks: confidence / IP range / proportionality / OT safety]
-   ──[mistral:7b, only if ESCALATE]──► semantic_check(context, proposed_actions) → APPROVE|REJECT
+C4 ──► pilot tools (fire-and-forget via t53.actions.dispatch)
+
+C1 (separate thread, pilot.events.raw):
+C1 ──[mistral:7b, only if no deterministic parser matches]──► extract_fields() → CanonicalEvent
 ```
 
 ### What is guaranteed (GA promises fulfilled)
 
-- **mistral:7b in C1**: The `LLMParser` fallback calls `llm.extract_fields()` which routes to the fast model. This handles free-text alerts, unknown SIEM formats, and future pilot log schemas without schema changes.
-- **Pilot resolution**: T5.3 is a single multi-pilot instance. Parsers (CEF, ECS, syslog, LLM) detect the pilot from event content and emit `pilot="UNKNOWN"` when no sector-specific keywords are present. `T53Pipeline._profile_for(pilot)` then selects the matching `SectorProfile` and C4 adapter set per-event. If pilot remains `UNKNOWN` after C1 (e.g. completely ambiguous free text), a warning is logged and the TELECOM profile is used as a last resort. The OT JSON parser is the only parser that hard-codes `pilot="INDUSTRY_4"` — its `can_parse()` is gated on `plc`/`protocol` keys that are inherently OT-specific.
-- **mistral-nemo in C2**: `AgentLoop` calls `llm.complete()` in a multi-turn loop (up to 10 turns, configurable). Each turn the model either calls a tool or produces a final decision. The RAME co-pilot integration for INDUSTRY_4 is provided via the sector-specific C2 system prompt in `profiles/industry4.yaml`.
-- **mistral:7b in C5 semantic guardrail**: `SafetyGate._semantic_review()` calls `llm.semantic_check()` using the fast model for borderline cases — not the heavy reasoning model — keeping latency low for the most time-sensitive path.
-- **mistral-nemo in C3 NL→Rego**: `PolicyTranslator` calls `llm.complete()` to generate OPA/Rego policy rules for ZTA enforcement, triggered when the AgentDecision includes a `policy_update` field.
+- **mistral:7b in C1**: `LLMParser` fallback handles free-text alerts, unknown SIEM formats, and future pilot log schemas without schema changes.
+- **Pilot resolution**: A single multi-pilot instance. Parsers detect the pilot from event content; `T53Pipeline._profile_for(pilot)` selects the matching `SectorProfile` and C4 adapter set. If pilot remains `UNKNOWN`, the TELECOM profile is used as a last resort with a warning. The OT JSON parser is the only parser that hard-codes `pilot="INDUSTRY_4"` — gated on `plc`/`protocol` keys.
+- **mistral:7b in C5 semantic guardrail**: `SafetyGate._semantic_review()` uses the fast model for ESCALATE cases only — keeping latency low on the critical execution path.
+- **mistral-nemo in C3 NL→Rego**: `PolicyTranslator` generates OPA/Rego policy rules for ZTA enforcement when the incoming `ActionRequest` carries a `policy_update` field.
 
 ### Offline / test mode
 
@@ -747,7 +715,6 @@ schemas/
   models/                     JSON Schema auto-generated from Pydantic v2 models
     canonical_event.schema.json
     action_request.schema.json
-    agent_decision.schema.json
     execution_result.schema.json
     guardrail_check.schema.json
     audit_record.schema.json
