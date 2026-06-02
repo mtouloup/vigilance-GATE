@@ -7,6 +7,7 @@ version: "3.9"
 #   ollama         LLM server (mistral:7b + mistral-nemo)
 #   ollama-init    One-shot model downloader (exits after pull)
 #   vigilance-gate The Agentic Wrapper Framework (T5.3)
+#   dozzle         Real-time log viewer → http://localhost:9999
 #
 # T5.3 is a single multi-pilot container — all four GA pilots are served
 # simultaneously (TELECOM, MARITIME, FINANCE, INDUSTRY_4). Pilot detection
@@ -110,6 +111,16 @@ services:
       ollama-init:
         condition: service_completed_successfully
     restart: on-failure
+
+  # ── Dozzle — real-time container log viewer ──────────────────────────────────
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: vigilance-dozzle
+    ports:
+      - "9999:8080"   # log viewer UI → http://localhost:9999
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
 
 volumes:
   rabbitmq_data:
