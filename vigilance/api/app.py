@@ -1,12 +1,10 @@
-"""T5.3 REST API — standardized HTTP interface for T5.6 Agentic ZTA Platform Integration.
+"""T5.3 REST API — T5.6 Agentic ZTA Platform Integration point.
 
-Provides endpoints for external system access to T5.3 capabilities:
-  POST /api/v1/events          Submit a raw event for processing (STANDALONE pipeline)
-  POST /api/v1/action-requests Submit an ActionRequest for C5+C3+C4 execution (INTEGRATED)
-  GET  /api/v1/profiles        List all loaded sector profiles
-  GET  /api/v1/health          Liveness / readiness check
-
-The pipeline instance is shared across requests and initialised once at startup.
+Endpoints:
+  POST /api/v1/events          Submit raw event → C1 normalize → publish to broker (202)
+  POST /api/v1/action-requests Submit ActionRequest → C5+C3+C4 execute → result (200/207)
+  GET  /api/v1/profiles        All four sector profiles
+  GET  /api/v1/health          Liveness check
 """
 from __future__ import annotations
 
@@ -22,8 +20,6 @@ from pydantic import BaseModel
 from vigilance.pipeline import T53Pipeline
 
 logger = logging.getLogger(__name__)
-
-# ── FastAPI app ────────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="T5.3 Agentic Wrapper Framework",
@@ -43,17 +39,10 @@ _pipeline: T53Pipeline | None = None
 def get_pipeline() -> T53Pipeline:
     global _pipeline
     if _pipeline is None:
-        mode       = os.getenv("VIGILANCE_MODE", "STANDALONE").upper()
-        simulation = os.getenv("VIGILANCE_SIMULATION", "").lower()
-        _pipeline = T53Pipeline(
-            mode="STANDALONE" if mode == "DIGITAL_TWIN" else mode,
-            simulation_mode=(mode == "DIGITAL_TWIN" or simulation == "digital_twin"),
-            dry_run=(simulation == "dry_run"),
-        )
+        dry_run = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
+        _pipeline = T53Pipeline(dry_run=dry_run)
     return _pipeline
 
-
-# ── Request / response models ──────────────────────────────────────────────────
 
 class RawEventRequest(BaseModel):
     raw: Any
@@ -69,8 +58,6 @@ class ActionRequestPayload(BaseModel):
     agent_confidence: float = 0.9
 
 
-# ── Endpoints ──────────────────────────────────────────────────────────────────
-
 @app.get("/api/v1/health", tags=["System"])
 def health() -> dict:
     """Liveness and readiness check."""
@@ -78,7 +65,6 @@ def health() -> dict:
     return {
         "status": "ok",
         "pilots": list(pipeline.profiles.keys()),
-        "mode": pipeline._mode,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -101,45 +87,44 @@ def list_profiles() -> dict:
 
 @app.post("/api/v1/events", tags=["Events"])
 def submit_event(body: RawEventRequest) -> JSONResponse:
-    """Submit a raw security event for full pipeline processing (STANDALONE mode).
+    """Submit a raw security event for C1 normalization.
 
-    Returns the ExecutionResult including per-action outcomes and guardrail verdict.
-    In INTEGRATED mode this endpoint performs C1 normalization only and returns
-    the CanonicalEvent; the full execution path runs asynchronously via the broker.
+    T5.3 normalizes the event, caches it, and publishes it to
+    t53.canonical_events for T5.4 to consume. Returns 202 Accepted —
+    the full execution result arrives later via t53.results.
     """
     pipeline = get_pipeline()
     try:
-        result = pipeline.process_event(body.raw)
+        event = pipeline.ingest_event(body.raw)
     except Exception as exc:
-        logger.error(f"Event processing error: {exc}", exc_info=True)
+        logger.error(f"Ingest error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
-    if result is None:
-        # INTEGRATED mode — C1 only; async execution via broker
-        return JSONResponse(
-            status_code=202,
-            content={"message": "Event accepted; C1 normalization complete. Execution dispatched via broker."},
-        )
-
     return JSONResponse(
-        status_code=200 if result.overall_success else 207,
-        content=result.model_dump(mode="json"),
+        status_code=202,
+        content={
+            "message": "Event accepted — CanonicalEvent published to t53.canonical_events.",
+            "event_id": event.event_id,
+            "pilot": event.pilot,
+            "type": event.type,
+            "severity": event.severity,
+        },
     )
 
 
 @app.post("/api/v1/action-requests", tags=["Execution"])
 def submit_action_request(body: ActionRequestPayload) -> JSONResponse:
-    """Submit an ActionRequest for C5 guardrail + C3+C4 execution (INTEGRATED mode).
+    """Submit an ActionRequest for C5 guardrail + C3+C4 dispatch.
 
-    Intended for T5.4 or external orchestrators that have already performed
-    agent selection and threat analysis. T5.3 will run the safety guardrail,
-    translate any NL policy to Rego (→ T5.5), and dispatch actions to pilot tools.
+    Intended for T5.4 or testing tools. T5.3 runs the safety guardrail,
+    translates any NL policy to Rego (→ T5.5), and dispatches actions to
+    pilot tools (→ t53.actions.dispatch). Returns the ExecutionResult.
     """
     pipeline = get_pipeline()
     try:
         result = pipeline.execute_action_request(body.model_dump())
     except Exception as exc:
-        logger.error(f"ActionRequest execution error: {exc}", exc_info=True)
+        logger.error(f"Execution error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
     return JSONResponse(

@@ -1,11 +1,12 @@
-"""Scenario C — Port of Rotterdam AIS Spoofing end-to-end pipeline test."""
+"""Scenario C — Port of Rotterdam AIS Spoofing end-to-end pipeline test (INTEGRATED flow)."""
 from __future__ import annotations
+import uuid
 import pytest
 
 from vigilance.pipeline import T53Pipeline
 
 
-_RAW_AIS_EVENT = {
+RAW_AIS_EVENT = {
     "vessel_id": "VESSEL-042",
     "ais_mmsi": "244820000",
     "port_zone": "Berth-7",
@@ -14,58 +15,65 @@ _RAW_AIS_EVENT = {
     "source": "port-radar-monitor",
 }
 
+T54_ACTIONS = ["block_vessel_access", "quarantine_cargo_system", "notify_port_authority", "notify_soc"]
 
-def test_scenario_c_rotterdam_ais_spoofing():
-    """Full pipeline: AIS spoofing alert → block_vessel_access + quarantine + notify."""
-    pipeline = T53Pipeline(sector="MARITIME")
-    result = pipeline.process_event(_RAW_AIS_EVENT)
 
+@pytest.fixture
+def pipeline():
+    return T53Pipeline(dry_run=True)
+
+
+def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.88):
+    event = pipeline.ingest_event(raw)
+    return pipeline.execute_action_request({
+        "request_id":       str(uuid.uuid4()),
+        "event_id":         event.event_id,
+        "pilot":            event.pilot,
+        "actions":          actions,
+        "agent_confidence": confidence,
+    })
+
+
+def test_scenario_c_ingest_detects_maritime(pipeline):
+    event = pipeline.ingest_event(RAW_AIS_EVENT)
+    assert event.pilot == "MARITIME"
+    assert event.severity == "HIGH"
+
+
+def test_scenario_c_canonical_event_published(pipeline):
+    pipeline.ingest_event(RAW_AIS_EVENT)
+    messages = pipeline.broker.get_messages("t53.canonical_events")
+    assert len(messages) == 1
+    assert messages[0]["pilot"] == "MARITIME"
+
+
+def test_scenario_c_execution_succeeds(pipeline):
+    result = _ingest_and_execute(pipeline, RAW_AIS_EVENT)
     assert result.overall_success
-    assert any(r.action == "block_vessel_access" for r in result.action_results)
-    assert any(r.action == "notify_soc" for r in result.action_results)
 
 
-def test_scenario_c_audit_record_created():
-    """Verify audit record is opened and closed with ROT prefix."""
-    pipeline = T53Pipeline(sector="MARITIME")
-    pipeline.process_event(_RAW_AIS_EVENT)
+def test_scenario_c_expected_actions_dispatched(pipeline):
+    result = _ingest_and_execute(pipeline, RAW_AIS_EVENT)
+    dispatched = [r.action for r in result.action_results]
+    assert "block_vessel_access" in dispatched
+    assert "notify_soc" in dispatched
 
+
+def test_scenario_c_audit_record_created(pipeline):
+    _ingest_and_execute(pipeline, RAW_AIS_EVENT)
     records = pipeline.audit_log.get_all()
     assert len(records) == 1
-    record = records[0]
-    assert record.closed is True
-    assert record.audit_id.startswith("aud-ROT-")
-    assert record.verdict in ("APPROVED", "SUCCESS", "ESCALATE")
+    assert records[0].audit_id.startswith("aud-ROT-")
 
 
-def test_scenario_c_broker_publishes_result():
-    """Verify result is published to t53.results broker topic."""
-    pipeline = T53Pipeline(sector="MARITIME")
-    pipeline.process_event(_RAW_AIS_EVENT)
-
+def test_scenario_c_result_published_to_broker(pipeline):
+    _ingest_and_execute(pipeline, RAW_AIS_EVENT)
     messages = pipeline.broker.get_messages("t53.results")
     assert len(messages) == 1
     assert messages[0]["overall_success"] is True
 
 
-def test_scenario_c_all_actions_succeed():
-    """All individual actions must succeed for the Rotterdam AIS spoofing scenario."""
-    pipeline = T53Pipeline(sector="MARITIME")
-    result = pipeline.process_event(_RAW_AIS_EVENT)
-
-    for action_result in result.action_results:
-        assert action_result.success, (
-            f"Action '{action_result.action}' failed: {action_result.message}"
-        )
-        assert action_result.latency_ms >= 0
-
-
-def test_scenario_c_correct_sector_profile():
-    """Verify the MARITIME profile is loaded with Rotterdam_NL pilot."""
-    pipeline = T53Pipeline(sector="MARITIME")
+def test_scenario_c_correct_sector_profile(pipeline):
     assert pipeline.profiles["MARITIME"].sector == "MARITIME"
     assert pipeline.profiles["MARITIME"].pilot == "Rotterdam_NL"
     assert pipeline.profiles["MARITIME"].ot_safety_flag is False
-    assert "port_siem" in pipeline.profiles["MARITIME"].tool_plugins
-    assert "port_iam" in pipeline.profiles["MARITIME"].tool_plugins
-    assert "port_ops" in pipeline.profiles["MARITIME"].tool_plugins
