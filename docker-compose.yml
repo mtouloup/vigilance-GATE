@@ -94,6 +94,9 @@ services:
   # Broker (outbound): t53.canonical_events, t53.results, t53.policy_updates,
   #                    t53.actions.dispatch
   # REST API:          http://localhost:8000/api/docs  (T5.6 integration point)
+  #
+  # Generated output (./data/ on your host):
+  #   workflow_audit.csv  — one row per pipeline execution (raw → canonical → result)
   vigilance-gate:
     build: .
     container_name: vigilance-gate
@@ -104,7 +107,10 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       API_HOST: 0.0.0.0
       API_PORT: "8000"
+      WORKFLOW_CSV_PATH: /app/data/workflow_audit.csv
       # VIGILANCE_DRY_RUN: "true"   # uncomment to skip broker dispatch (dev only)
+    volumes:
+      - ./data:/app/data   # generated files → persisted on your host under ./data/
     depends_on:
       rabbitmq:
         condition: service_healthy
