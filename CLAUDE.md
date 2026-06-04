@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: June 2026 (auto-generated from repo content + project knowledge).
+> Last updated: June 2026 — reflects actual implemented state of the repository.
 
 ---
 
@@ -17,7 +17,7 @@
 **Task:** T5.3 — Agentic Wrappers for Cybersecurity Technologies
 **Task Lead:** INNOV-ACTS
 
-**One-line purpose:** T5.3 is the operational execution bridge between WP5 AI intelligence (agents, orchestration, knowledge) and the real cybersecurity tools deployed in the pilot environments. It normalises events into a canonical format, exposes tool capabilities to agents, executes AI-approved actions safely, and records every step for audit.
+**One-line purpose:** T5.3 is the operational execution bridge between WP5 AI intelligence (agents, orchestration, knowledge) and the real cybersecurity tools deployed in the pilot environments. It normalises raw events into a canonical format, routes them through safety checks, executes AI-approved actions via vendor-specific adapters, and records every step for audit.
 
 **Primary deliverable contribution:** D5.1 (Framework Architecture and Data Models)
 
@@ -32,235 +32,269 @@
 
 ---
 
-## Repository Structure
+## Implementation Status
 
-This repository is currently in the **documentation and design phase** (M3–M5). There is no runnable code yet. All files are design artefacts.
+**The repository contains a fully implemented, containerised, running service.** This is not a design-phase repository. All core components are implemented and tested.
 
 ```
 vigilance-GATE/
 │
-├── CLAUDE.md                              ← this file
+├── CLAUDE.md                          ← this file (persistent memory)
+├── Dockerfile                         ← python:3.11-slim image
+├── docker-compose.yml                 ← full stack: gate + rabbitmq + ollama + dozzle
+├── pyproject.toml                     ← package manifest and dependencies
 │
-├── Grant_Agreement_-_GAP-101249737.pdf    ← authoritative GA source; supersedes all
-│                                             other documents on what is mandated
+├── vigilance/                         ← main application package
+│   ├── main.py                        ← entrypoint
+│   ├── service.py                     ← service lifecycle
+│   ├── pipeline.py                    ← INTEGRATED mode pipeline orchestration
+│   ├── api/                           ← REST API (POST /api/v1/events → 202)
+│   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
+│   ├── llm/                           ← LLM abstraction layer
+│   │   ├── base.py                    ← LLMProvider ABC
+│   │   └── ollama_provider.py         ← OllamaLLMProvider (Mistral 7B + Nemo 12B)
+│   ├── models/                        ← Pydantic v2 data models
+│   │   ├── canonical_event.py
+│   │   ├── action_request.py
+│   │   ├── execution_result.py
+│   │   ├── guardrail_check.py
+│   │   └── audit_record.py
+│   └── components/
+│       ├── c1_ingestion/              ← C1: normalizer + CEF/ECS/syslog/LLM parsers
+│       ├── c3_execution/              ← C3: executor + policy_translator (NL→Rego)
+│       ├── c4_adapters/               ← C4: tool plugins per sector
+│       │   ├── telecom/               ← Splunk, AD, CrowdStrike adapters
+│       │   ├── industry4/             ← Splunk, AD, Suricata adapters
+│       │   ├── maritime/              ← port SIEM, IAM, ops adapters
+│       │   └── finance/               ← banking SIEM, IAM, EDR adapters
+│       ├── c5_safety/                 ← C5: guardrail + audit + simulation
+│       └── c6_profiles/               ← C6: ProfileManager (loads YAML sector profiles)
 │
-├── T5_3_Architecture_Workflow.docx        ← primary engineering reference (v2.0, May 2026)
-│                                             component specs, workflow trace, LLM usage
-│                                             table, GA traceability table
+├── profiles/                          ← sector profile YAMLs
+│   ├── telecom.yaml                   ← OTE / TELECOM
+│   ├── industry4.yaml                 ← Siemens / INDUSTRY_4
+│   ├── maritime.yaml                  ← Port of Rotterdam / MARITIME (GA transferability)
+│   └── finance.yaml                   ← CaixaBank / FINANCE (GA transferability)
 │
-├── Architecture_explain.docx              ← presenter notes for the architecture diagram;
-│                                             verbal walkthrough of the internal components
+├── schemas/                           ← data model and broker schemas
+│   ├── README.md
+│   ├── models/                        ← JSON Schema (draft 2020-12), auto-generated from Pydantic
+│   ├── broker/
+│   │   └── topics.yaml                ← broker integration interface (YAML, with comments)
+│   └── profiles/
+│       └── sector_profile.schema.yaml ← sector profile schema (YAML, with comments)
 │
-├── t53_internal_architecture.drawio       ← canonical architecture diagram (draw.io XML)
-│                                             single tab: internal architecture showing
-│                                             C1–C5 pipeline + external interfaces
+├── infra/
+│   └── rabbitmq/
+│       ├── rabbitmq.conf              ← loads definitions at startup
+│       └── definitions.json           ← pre-declares all durable queues + user
 │
-├── t5_3_internal_Architecture.jpg         ← rasterised export of the drawio diagram
-│                                             (use drawio source as truth, not this)
-│
-└── WP5_Global_Architecture_GFT_Perspective.png
-                                           ← GFT's view of the full WP5 architecture;
-                                             reference only — T5.3 positioning shown as
-                                             bidirectional gateway (INNOV view), not
-                                             unidirectional processor (GFT view)
+├── tests/                             ← test suite (73+ tests)
+└── tools/
+    ├── publish_event.sh               ← example producer for pilot partners
+    └── simulate_t54.sh                ← T5.4 orchestrator simulator (closes INTEGRATED test loop)
 ```
-
-**No source code, no test suite, no CI config, no package manifests exist yet.** The next development phase will add these. When they are added, update this file.
 
 ---
 
-## Architecture Summary
+## Architecture — Current Implemented Design
 
-### Core design pattern
+### Mode of operation
 
-T5.3 implements an **Observe → Reason → Act** loop:
+**T5.3 operates exclusively in INTEGRATED mode.** STANDALONE and DIGITAL_TWIN modes were removed (PR #28, May 2026). The in-process C2 AgentLoop was also removed at the same time — reasoning is owned by T5.4 (GFT orchestrator) and T5.2 (AEGIS agent repository), not T5.3.
 
-1. **Observe:** Raw events from pilot tools are consumed from the message broker and normalised into a typed `CanonicalEvent`.
-2. **Reason:** An LLM agent loop analyses the event, queries tools for additional context, and produces an `AgentDecision` with recommended actions and a confidence score.
-3. **Act:** Approved `ActionRequest` objects are safety-checked, then dispatched to vendor-specific tool adapters that translate canonical actions into real API calls.
+### Active components (5, not 6)
 
-T5.3 is the **only** WP5 component that communicates directly with real pilot tools. All upstream components (T5.1, T5.2, T5.4) operate exclusively on canonical data structures produced and consumed by T5.3. This isolation enforces vendor independence, safety, and testability.
-
-T5.3 is a **bidirectional gateway**: it both receives events from tools (inbound normalisation) and dispatches actions back to tools (outbound execution). This is architecturally distinct from a one-directional event processor.
-
-### Six internal components
-
-| ID | Name | Role | LLM? |
+| ID | Name | Status | LLM? |
 |---|---|---|---|
-| C1 | Event Ingestion & Normalization | Entry point; converts raw vendor logs into `CanonicalEvent` | Conditional (unknown formats only) |
-| C2 | Agentic Interaction Layer | LLM reasoning core; runs the multi-turn Observe-Reason-Act loop | Yes (core) |
-| C3 | Action & Policy Execution | Receives `ActionRequest` from T5.4; dispatches to C4; applies ZTA policy changes | Conditional (NL→Rego translation) |
-| C4 | Tool Adapter Layer | Translates canonical actions into vendor API calls via per-tool plugins | No (deterministic) |
-| C5 | Safety, Audit & Simulation | Pre-execution safety gate; immutable audit log; Digital Twin / dry-run mode | Partial (semantic guardrail) |
-| C6 | Sector Profile Manager | Cross-cutting config layer; injects sector-specific settings into C1–C4 at startup | Indirect (sets C2 system prompt) |
+| C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Mistral 7B fallback for unknown formats |
+| C3 | Action & Policy Execution | ✅ Implemented | Conditional — Mistral Nemo 12B for NL→Rego translation |
+| C4 | Tool Adapter Layer | ✅ Implemented | No — deterministic API translation |
+| C5 | Safety, Audit & Simulation | ✅ Implemented | Partial — Mistral 7B semantic check for ESCALATE verdicts |
+| C6 | Sector Profile Manager | ✅ Implemented | Indirect — sets per-sector context at startup |
+| ~~C2~~ | ~~Agentic Interaction Layer~~ | ❌ Removed | Reasoning is T5.4 + T5.2 domain |
 
-### Data flow (happy path)
+### INTEGRATED mode data flow
 
 ```
-Pilot Tool
-  │  (CEF / ECS / syslog / JSON alert)
+Pilot Tool (CEF / ECS / syslog / JSON alert)
+  │
   ▼
-Message Broker  [topic: pilot.events.raw]
+RabbitMQ  [topic: pilot.events.raw]
   │
   ▼
 C1 — Event Ingestion & Normalization
-  │  (+ C6 sector schema extensions)
-  │  → CanonicalEvent
+  │  Parsers: CEF → ECS → syslog → LLM fallback
+  │  C6 injects sector schema extensions
+  │  pilot=UNKNOWN resolved to VIGILANCE_SECTOR profile
+  │  → CanonicalEvent (UUID event_id always generated by T5.3, never extracted from payload)
   ▼
-C2 — Agentic Interaction Layer
-  │  (LLM multi-turn loop; queries C4 for context if needed)
-  │  → AgentDecision {recommended_actions, confidence}
-  ▼
-T5.4 (external — GFT)
-  │  (validates confidence ≥ 0.80; composes ActionRequest)
+RabbitMQ  [topic: t53.canonical_events]   ← T5.4 consumes this
   │
-Message Broker  [topic: t53.actions.execute]
+  │          T5.4 (GFT) orchestrates: agent reasoning → ActionRequest
+  │
+  ▼
+RabbitMQ  [topic: t53.action_requests]    ← T5.3 consumes this
   │
   ▼
 C5 — Safety Gate (pre-execution)
-  │  (deterministic checks + LLM semantic guardrail)
-  │  → GuardrailCheck {verdict: APPROVED | REJECTED}
+  │  Deterministic checks: confidence ≥ 0.80, IP allowlist
+  │  LLM semantic guardrail (Mistral 7B) for ESCALATE cases
+  │  → GuardrailCheck {verdict: APPROVED | REJECTED | ESCALATE}
   ▼
 C3 — Action & Policy Execution
-  │  (NL→Rego if policy_update present; dispatches to C4)
+  │  NL→Rego translation if policy_update present (Mistral Nemo 12B)
+  │  Dispatches to C4 adapters
   ▼
 C4 — Tool Adapter Layer
-  │  (SIEM / IAM / EDR / IDS / Notification plugins)
+  │  Per-sector plugin selected by C6 profile
+  │  SIEM / IAM / EDR / IDS / Notification plugins
   ▼
-Pilot Tool  (real API call)
-  │
-  ▼
+  ├─→ RabbitMQ [topic: t53.policy_updates]    → T5.5 ZTA engine (fire-and-forget)
+  └─→ RabbitMQ [topic: t53.actions.dispatch]  → Pilot tools (fire-and-forget)
+
 C5 — Audit Closure
   │  → ExecutionResult
   ▼
-Message Broker  [topic: t53.results]
-  │
-  ▼
-T5.4 / T5.2  (orchestration state update / agent memory)
+RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 ```
 
-**Digital Twin mode:** When `VIGILANCE_SIMULATION=true`, C5 routes all actions to the WP3 STAM/D-VISOR simulation environment instead of real tools. Synthetic events arrive on broker topic `dt.events.synthetic` and flow through the full pipeline identically.
+**Key properties of this design:**
+- T5.3 returns 202 Accepted immediately after dispatching — never blocks on T5.5 or pilot tool response.
+- C1 and ActionRequest consumers run on independent threads (PR #22) to prevent LLM blocking.
+- RabbitMQ heartbeat is disabled (heartbeat=0) to prevent connection reset during LLM calls (PR #18).
+- All C1 parsers emit `pilot="UNKNOWN"` when no sector keywords detected; C6 resolves UNKNOWN at enrichment time.
 
-### LLM usage
+### Multi-pilot runtime
 
-| Component | Model | Purpose | Frequency |
-|---|---|---|---|
-| C1 | Mistral 7B | Field extraction from unknown/novel log formats | Low — only unrecognised formats |
-| C2 | Mistral Nemo 12B | Multi-turn reasoning loop: investigate then decide | High — every event |
-| C3 | Mistral Nemo 12B | Translate natural-language policy intent into OPA/Rego rule | Low — only when `policy_update` field present |
-| C4 | None | Deterministic API translation; no LLM involvement | — |
-| C5 | Mistral 7B | Semantic guardrail for ambiguous or disproportionate action sets | Low — edge cases |
-| C6 | N/A | Sets per-sector system prompt injected into C2 at startup | Once at startup |
-
-**Design rule:** The LLM in C2 never calls real tools directly. Every tool call it emits is intercepted by T5.3, executed via C4, and the result is injected back into the conversation context. The LLM operates on canonical representations only.
-
-### Deployment model
-
-- **LLM runtime:** Self-hosted Mistral via [Ollama](https://ollama.com/) or [vLLM](https://github.com/vllm-project/vllm) on the VIGILANCE project cloud.
-- **API surface:** OpenAI-compatible API (`/v1/chat/completions`), so LLM clients require no vendor SDK.
-- **Models in use:** Mistral 7B (fast, low-cost tasks), Mistral Nemo 12B (reasoning tasks).
-- **Who deploys:** Open gap in the GA — INNOV is named in the risk mitigation section as the responsible party for local deployment. Not yet formally assigned.
+One `vigilance-gate` container handles all four sectors simultaneously. Pilot/sector detection happens per-event in C1 (parser heuristics + LLM extraction). The correct C6 profile and C4 adapter set are selected per event. `ProfileManager.load_all_profiles()` loads all four profiles at startup.
 
 ---
 
-## Key Schemas & Interfaces
+## Broker Topics
+
+| Topic | Direction | Producer | Consumer |
+|---|---|---|---|
+| `pilot.events.raw` | Inbound | Pilot tools | C1 |
+| `t53.canonical_events` | Outbound | C1 | T5.4 |
+| `t53.action_requests` | Inbound | T5.4 | C5 → C3 → C4 |
+| `t53.policy_updates` | Outbound | C3 | T5.5 ZTA engine (async) |
+| `t53.actions.dispatch` | Outbound | C4 | Pilot tools (fire-and-forget) |
+| `t53.results` | Outbound | C5 | T5.4, T5.2 |
+
+All queues are durable and pre-declared via `infra/rabbitmq/definitions.json` at broker startup.
+
+---
+
+## LLM Usage
+
+| Component | Model | Purpose | Frequency |
+|---|---|---|---|
+| C1 | Mistral 7B | Field extraction from unknown/novel log formats | Low — fallback only |
+| C3 | Mistral Nemo 12B | NL → OPA/Rego policy rule translation | Low — only when `policy_update` present |
+| C5 | Mistral 7B | Semantic guardrail for ESCALATE verdicts | Low — edge cases only |
+
+**C2 (Mistral Nemo 12B reasoning loop) has been removed.** Reasoning is T5.4's responsibility.
+
+**Design rule:** LLMs never call real tools directly. Tool calls are intercepted by T5.3, executed via C4, and results injected back. The LLM operates on canonical representations only.
+
+---
+
+## Data Models
 
 ### CanonicalEvent
 
-Produced by C1. Consumed by C2, T5.1 (RAG context), T5.4.
+Produced by C1. Consumed by T5.4 (via `t53.canonical_events`).
 
 ```json
 {
-  "id":        "string  — unique event ID, e.g. evt-20240505-0042",
-  "type":      "string  — event type enum, e.g. BRUTE_FORCE_ATTEMPT, LATERAL_MOVEMENT",
-  "source":    "string  — originating tool class: IDS | SIEM | EDR | IAM",
-  "pilot":     "string  — sector profile enum: TELECOM | INDUSTRY_4 | PORT_LOGISTICS | BANKING",
-  "src_ip":    "string  — IPv4/IPv6 or null",
-  "dst_ip":    "string  — IPv4/IPv6 or null",
-  "target":    "string  — host/user/resource identifier or null",
-  "severity":  "string  — LOW | MEDIUM | HIGH | CRITICAL",
-  "count":     "integer — event occurrence count (e.g. failed login attempts)",
-  "timestamp": "string  — ISO 8601 UTC",
-  "raw_message": "string — original vendor log line, preserved verbatim",
+  "event_id":   "string  — UUID, always generated by T5.3 (never extracted from raw payload)",
+  "type":       "string  — event type enum: BRUTE_FORCE_ATTEMPT, LATERAL_MOVEMENT, etc.",
+  "source":     "string  — originating tool class: IDS | SIEM | EDR | IAM",
+  "pilot":      "string  — sector profile: TELECOM | INDUSTRY_4 | MARITIME | FINANCE",
+  "src_ip":     "string  — IPv4/IPv6 or null",
+  "dst_ip":     "string  — IPv4/IPv6 or null",
+  "target":     "string  — host/user/resource or null",
+  "severity":   "string  — LOW | MEDIUM | HIGH | CRITICAL",
+  "count":      "integer — occurrence count or null (coerced; never a raw LLM string)",
+  "timestamp":  "string  — ISO 8601 UTC",
+  "raw_message": "string — original vendor log line, verbatim",
   "sector_extensions": {
-    "comment": "fields injected by C6 based on active sector profile",
     "TELECOM":    { "subscriber_id": "?string", "cell_id": "?string", "imsi": "?string" },
     "INDUSTRY_4": { "plc_id": "?string", "line_id": "?string", "scada_zone": "?string" },
-    "PORT_LOGISTICS": { "vessel_id": "?string", "berth_id": "?string", "cargo_manifest_id": "?string" },
-    "BANKING":    { "account_id": "?string", "transaction_id": "?string", "branch_code": "?string" }
+    "MARITIME":   { "vessel_id": "?string", "berth_id": "?string", "cargo_manifest_id": "?string" },
+    "FINANCE":    { "account_id": "?string", "transaction_id": "?string", "fraud_score": "?float" }
   }
 }
 ```
 
-**Validation rules:**
-- `id`, `type`, `source`, `pilot`, `severity`, `timestamp` are **required**; absence is a hard error.
-- `src_ip`, `dst_ip`, `target`, `count` are **optional**; absence is allowed, set to `null` with a warning log.
-- `sector_extensions` fields not present in the raw event are set to `null`, never omitted.
-- `raw_message` must always be populated; it is the audit trail for normalization disputes.
+**Implementation notes:**
+- `event_id` is always a UUID generated by `LLMParser` — never extracted from log content (PR #29 fix).
+- LLM-extracted `int`/`float` fields are coerced via `_to_int()` / `_to_float()` helpers (PR #19) to prevent Pydantic validation errors from malformed LLM output.
+- All LLM string fields are coerced to `str` before Pydantic model construction (PR #21).
+- Cross-pilot fields (e.g. TELECOM fields in an INDUSTRY_4 event) are never populated by the LLM (PR #24 fix).
 
-> ⚠️ **OPEN BLOCKER:** The canonical field names, types, and enumeration values have **not yet been agreed** across T5.1 (GFT), T5.3 (INNOV), T5.4 (GFT), and T5.6 (ETRA). This schema is the INNOV internal design. Do not treat it as the consortium-ratified contract until a cross-task schema agreement has been signed off.
+> ⚠️ **OPEN BLOCKER:** Field names, types, and enum values have not been agreed across T5.1 (GFT), T5.4 (GFT), and T5.6 (ETRA). This is the INNOV-internal schema. Do not treat it as the consortium-ratified contract.
 
 ---
 
 ### ActionRequest
 
-Produced by T5.4 (GFT). Consumed by T5.3 / C3. Published on broker topic `t53.actions.execute`.
+Produced by T5.4 (GFT). Consumed by T5.3 / C5. Published on `t53.action_requests`.
 
 ```json
 {
-  "request_id":    "string  — unique ID for this request",
-  "event_id":      "string  — ID of the triggering CanonicalEvent",
-  "agent":         "string  — agent identifier that produced the AgentDecision",
-  "confidence":    "float   — agent confidence score (0.0–1.0); must be ≥ 0.80 to proceed",
+  "request_id":    "string  — unique ID",
+  "event_id":      "string  — triggering CanonicalEvent ID",
+  "agent":         "string  — agent identifier",
+  "confidence":    "float   — agent confidence (0.0–1.0); must be ≥ 0.80 to proceed",
   "actions": [
     {
-      "type":       "string  — canonical action enum: block_ip | revoke_session | isolate_host | notify_soc | update_policy | ...",
+      "type":       "string  — canonical action: block_ip | revoke_session | isolate_host | notify_soc | update_policy | ...",
       "target":     "string  — IP, user, host, or resource",
       "parameters": "object  — action-specific parameters"
     }
   ],
   "policy_update": {
-    "intent":  "string  — natural language description of the desired ZTA policy change",
-    "ttl_sec": "integer — time-to-live for the policy rule in seconds"
+    "intent":  "string  — natural language ZTA policy change description",
+    "ttl_sec": "integer — time-to-live for the policy rule"
   },
-  "simulation":    "boolean — if true, C5 routes to Digital Twin; no real API calls are made"
+  "simulation":    "boolean — if true, VIGILANCE_DRY_RUN mode; no real API calls"
 }
 ```
 
-> ⚠️ **OPEN BLOCKER:** The ActionRequest structure above is the INNOV internal design. The `type` enum values, `parameters` schema per action type, and the `policy_update` format are **not yet agreed** with T5.4 (GFT). This is the primary integration blocker for the T5.3 ↔ T5.4 interface.
+> ⚠️ **OPEN BLOCKER:** ActionRequest structure is the INNOV-internal design. The `type` enum, per-action `parameters` schema, and `policy_update` format are not yet agreed with T5.4 (GFT). This is the primary integration blocker for the T5.3 ↔ T5.4 interface.
 
 ---
 
-### AgentDecision
+### GuardrailCheck
 
-Produced by C2. Consumed by T5.4 to compose an ActionRequest.
+Produced by C5 pre-execution. Internal only — not published to the broker.
 
 ```json
 {
-  "agent":      "string  — agent ID",
-  "event_id":   "string  — triggering CanonicalEvent ID",
-  "threat":     "string  — threat classification, e.g. CONFIRMED_BRUTE_FORCE",
-  "confidence": "float   — reasoning confidence (0.0–1.0)",
-  "recommend":  ["string — list of canonical action type strings"]
+  "ip_protected":    "boolean — target IP is in the protected allowlist",
+  "confidence_ok":   "boolean — agent confidence ≥ 0.80 threshold",
+  "simulation_mode": "boolean",
+  "audit_log_id":    "string",
+  "verdict":         "string  — APPROVED | REJECTED | ESCALATE"
 }
 ```
+
+`ESCALATE` triggers the Mistral 7B semantic guardrail second-opinion. ESCALATE → APPROVED when proportionate; ESCALATE → REJECTED otherwise.
 
 ---
 
 ### ExecutionResult
 
-Produced by C5 after audit closure. Published on broker topic `t53.results`.
+Produced by C5 after audit closure. Published on `t53.results`.
 
 ```json
 {
-  "request_id":     "string  — matching ActionRequest ID",
+  "request_id":     "string",
   "status":         "string  — SUCCESS | PARTIAL | FAILED",
   "results": [
-    {
-      "action":     "string  — action type",
-      "status":     "string  — OK | ERROR",
-      "latency_ms": "integer"
-    }
+    { "action": "string", "status": "string — OK | ERROR", "latency_ms": "integer" }
   ],
   "policy_updated": "boolean",
   "audit_closed":   "string  — audit log record ID"
@@ -269,214 +303,103 @@ Produced by C5 after audit closure. Published on broker topic `t53.results`.
 
 ---
 
-### GuardrailCheck
+## Sector Profiles & C4 Plugins
 
-Produced by C5 pre-execution. Internal artefact; not published to the broker.
+| Profile | Pilot | SIEM | IAM | EDR/IDS | INNOV scope? |
+|---|---|---|---|---|---|
+| `telecom.yaml` | OTE (GR) | Splunk | Active Directory | CrowdStrike EDR | ✅ Yes |
+| `industry4.yaml` | Siemens (RO) | Splunk | Active Directory | Suricata IDS | ✅ Yes |
+| `maritime.yaml` | Port of Rotterdam (NL) | Elastic | Keycloak | Suricata IDS | ❌ No |
+| `finance.yaml` | CaixaBank (ES) | Elastic | Keycloak | SentinelOne EDR | ❌ No |
 
-```json
-{
-  "ip_protected":    "boolean — target IP is in the protected allowlist",
-  "confidence_ok":   "boolean — agent confidence ≥ 0.80 threshold",
-  "simulation_mode": "boolean",
-  "audit_log_id":    "string",
-  "verdict":         "string  — APPROVED | REJECTED | FLAGGED"
-}
-```
-
-`FLAGGED` means the LLM semantic guardrail found a disproportionate or unusual action combination. Routes to human escalation; does not auto-reject.
+Maritime and finance profiles exist because the GA mandates transferable wrappers across all four sectors. INNOV validates only TELECOM and INDUSTRY_4.
 
 ---
 
-### Sector Profile (C6 YAML)
-
-Loaded at startup from the file pointed to by `VIGILANCE_SECTOR`. Example structure:
-
-```yaml
-sector: TELECOM
-pilot: OTE
-tools:
-  siem: splunk
-  iam: active_directory
-  edr: crowdstrike
-schema_extensions:
-  - subscriber_id
-  - cell_id
-  - imsi
-llm_system_prompt: "You are a telecom cybersecurity agent monitoring OTE's SOC..."
-policy_templates:
-  - block_ip_iptables
-  - session_revoke_ad
-```
-
----
-
-## Message Broker Topics
-
-| Topic | Direction | Producer | Consumer |
-|---|---|---|---|
-| `pilot.events.raw` | Inbound | Pilot tools | C1 |
-| `t53.actions.execute` | Inbound | T5.4 | C3 (via C5) |
-| `t53.results` | Outbound | C5 | T5.4, T5.2 |
-| `dt.events.synthetic` | Inbound (sim) | WP3 STAM/D-VISOR | C5 (Digital Twin mode) |
-
-Broker technology (Kafka, RabbitMQ, or other) is not yet specified in the GA. This is an open technical choice.
-
----
-
-## Sector Profiles & Pilot Tool Stacks
-
-| Sector Profile | Pilot | SIEM | IAM | EDR/IDS |
-|---|---|---|---|---|
-| `TELECOM` | OTE (GR) — **INNOV scope** | Splunk | Active Directory | CrowdStrike EDR |
-| `INDUSTRY_4` | Siemens (RO) — **INNOV scope** | Splunk | Active Directory | Suricata IDS |
-| `PORT_LOGISTICS` | DronePort Rotterdam (NL) — not INNOV | Elastic | Keycloak | Suricata IDS |
-| `BANKING` | CaixaBank (ES) — not INNOV | Elastic | Keycloak | SentinelOne EDR |
-
-INNOV develops and validates the `TELECOM` and `INDUSTRY_4` profiles. The `PORT_LOGISTICS` and `BANKING` profiles exist in the framework design (GA mandates transferable wrappers across sectors) but their integration and validation is not INNOV's responsibility.
-
----
-
-## Tool Adapter Plugins (C4)
-
-Each plugin implements a common `ToolAdapter` interface. Adding support for a new tool requires only implementing one new plugin class — no changes to any other component.
-
-| Plugin | Tools covered | Canonical actions |
-|---|---|---|
-| SIEM Plugin | Splunk REST API, Elastic API | `query_siem_logs`, `ack_alert`, `update_correlation_rule` |
-| IAM Plugin | Keycloak REST, Active Directory LDAP | `revoke_session`, `suspend_user`, `update_access_policy` |
-| EDR Plugin | CrowdStrike API, SentinelOne API | `isolate_host`, `terminate_process`, `quarantine_threat` |
-| IDS Plugin | Suricata REST, Snort REST | `block_ip`, `rate_limit`, `drop_traffic` |
-| Notification Plugin | Slack webhook, SMTP, PagerDuty | `notify_soc`, `escalate_incident` |
-
----
-
-## Development Guide
-
-> **Status:** No code exists yet. This section documents the intended setup once implementation begins.
+## Infrastructure & Developer Guide
 
 ### Environment variables
 
 | Variable | Purpose | Example |
 |---|---|---|
-| `VIGILANCE_SECTOR` | Selects the sector profile YAML for C6 | `TELECOM` or `INDUSTRY_4` |
-| `VIGILANCE_LLM_BASE_URL` | Base URL for the OpenAI-compatible LLM API | `http://localhost:11434/v1` |
-| `VIGILANCE_LLM_MODEL_FAST` | Model for C1 / C5 (speed-optimised) | `mistral:7b` |
-| `VIGILANCE_LLM_MODEL_REASON` | Model for C2 / C3 (reasoning-optimised) | `mistral-nemo:12b` |
-| `VIGILANCE_BROKER_URL` | Message broker connection string | `kafka://localhost:9092` |
-| `VIGILANCE_OPA_URL` | OPA policy engine endpoint | `http://localhost:8181` |
-| `VIGILANCE_SIMULATION` | Enable Digital Twin / dry-run mode | `true` / `false` |
+| `VIGILANCE_SECTOR` | Active sector profile for C6 | `TELECOM` or `INDUSTRY_4` |
+| `OLLAMA_BASE_URL` | Ollama server URL; if unset, StubLLMProvider is used | `http://ollama:11434` |
+| `VIGILANCE_BROKER_URL` | RabbitMQ AMQP connection string | `amqp://vigilance:vigilance@rabbitmq:5672/` |
+| `VIGILANCE_OPA_URL` | OPA policy engine endpoint (C3) | `http://localhost:8181` |
+| `VIGILANCE_DRY_RUN` | Dry-run mode — no real tool calls | `true` / `false` |
 | `VIGILANCE_CONFIDENCE_THRESHOLD` | Minimum agent confidence to proceed | `0.80` |
 | `VIGILANCE_PROTECTED_RANGES` | CIDR list of hosts that must never be actioned | `10.0.0.0/8,192.168.0.0/16` |
 
-### Running LLMs locally (Ollama)
+### Running the full stack
 
 ```bash
-# Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-
-# Pull required models
-ollama pull mistral:7b
-ollama pull mistral-nemo:12b
-
-# Verify OpenAI-compatible endpoint
-curl http://localhost:11434/v1/models
+docker compose up --build
 ```
 
-### Running LLMs at scale (vLLM)
+Services:
+- `vigilance-gate` — T5.3 application
+- `rabbitmq` — RabbitMQ 3.13 with management UI at http://localhost:15672
+- `ollama` + `ollama-init` — LLM server with `mistral:7b` and `mistral-nemo` pulled at startup
+- `dozzle` — real-time log viewer for all containers at http://localhost:9999
+
+### Testing the INTEGRATED pipeline
 
 ```bash
-pip install vllm
-python -m vllm.entrypoints.openai.api_server \
-  --model mistralai/Mistral-Nemo-Instruct-2407 \
-  --port 8000
+# 1. Publish a raw event
+tools/publish_event.sh
+
+# 2. Simulate T5.4 consuming the CanonicalEvent and sending back an ActionRequest
+tools/simulate_t54.sh           # auto mode
+tools/simulate_t54.sh --purge   # purge stale events first
 ```
 
-### Running OPA (policy engine for C3)
+### Running tests
 
 ```bash
-docker run -p 8181:8181 openpolicyagent/opa run --server
+pytest tests/
+# StubLLMProvider is used automatically when OLLAMA_BASE_URL is not set
 ```
 
-### Running tests (placeholder)
+### RabbitMQ healthcheck
 
-```bash
-# Unit tests (per component)
-pytest tests/unit/
+Uses `check_port_connectivity` (not `rabbitmq-diagnostics ping`) to verify AMQP port 5672 is accepting connections before dependent services start.
 
-# Integration tests (requires broker + LLM + OPA running)
-pytest tests/integration/
+### Ollama healthcheck
 
-# Simulation mode tests (no external dependencies)
-VIGILANCE_SIMULATION=true pytest tests/simulation/
-```
-
-No test suite exists yet. When writing tests, cover: CanonicalEvent validation in C1, LLM fallback behaviour when confidence is below threshold in C5, tool adapter plugin contract enforcement in C4.
-
-### Linting / formatting
-
-Not yet configured. When added, document the tool (ruff, flake8, black, etc.) and the CI command here.
+Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ollama` image.
 
 ---
 
-## Integration Points
-
-### T5.1 — GFT (Data & Knowledge / RAG)
-
-- T5.1 provides a **RAG API** that C2 calls during the reasoning loop to retrieve threat intelligence and historical context relevant to the current `CanonicalEvent`.
-- **Open dependency:** The RAG API endpoint contract (auth, query format, response schema) has not been specified. C2 currently treats RAG context as an optional string appended to the LLM prompt.
-
-### T5.4 — GFT (CyberSec Agents / Orchestration)
-
-- T5.4 is the **primary upstream caller** of T5.3. It consumes `AgentDecision` from C2, composes `ActionRequest`, and publishes it to the broker.
-- T5.4 also provides the orchestration layer that routes `AgentDecision` outputs from T5.2 agents back through T5.3.
-- **⚠️ PRIMARY INTEGRATION BLOCKER:** The `CanonicalEvent` schema and `ActionRequest` protocol have not been agreed between INNOV (T5.3) and GFT (T5.1, T5.4). Until this is resolved, cross-task integration testing is impossible. This must be escalated and resolved before M6.
-
-### T5.6 — ETRA (Industry Specifications)
-
-- T5.6 provides sector-specific regulatory and operational requirements (NIS2, GDPR, ZTA blueprints) that inform the ZTA policy templates in C3 and the sector profiles in C6.
-- **Open dependency:** The format in which T5.6 delivers regulatory constraints to T5.3 is not yet defined. Currently assumed to be static YAML policy templates; this needs confirmation.
-
-### WP3 — STAM (Digital Twin / Simulation)
-
-- WP3 provides the ATEM / D-VISOR simulation environment. In Digital Twin mode, C5 publishes `ActionRequest` outputs to WP3 instead of real tools, and consumes synthetic events from topic `dt.events.synthetic`.
-- **Open dependency:** The simulation event format and broker topic names must be agreed with STAM.
-
-### WP2 — T2.3 (Cybersecurity Technology Inventory)
-
-- T2.3 is the ground truth layer for which cybersecurity tools are deployed in each pilot. C4 plugin selection and C6 sector profiles must remain consistent with the T2.3 inventory.
-- T2.2 bottom-up requirements survey has been completed; ongoing alignment with WP2 architecture is required.
-
----
-
-## Open Items & TODOs
+## Open Items & Blockers
 
 ### Critical blockers
 
-- [ ] **CanonicalEvent / ActionRequest schema agreement** — cross-task sign-off required with T5.1 (GFT), T5.4 (GFT), T5.6 (ETRA). Until agreed, all schema definitions in this repo are INNOV-internal drafts only. **This is the primary integration blocker.**
-- [ ] **LLM deployment ownership** — the GA does not explicitly assign responsibility for deploying the self-hosted Mistral instance. INNOV is named in risk mitigation but this needs formal assignment in the project.
+- [ ] **CanonicalEvent / ActionRequest schema agreement** — cross-task sign-off required with T5.1 (GFT), T5.4 (GFT), T5.6 (ETRA). All schemas in this repo are INNOV-internal drafts. **This is the primary integration blocker.**
+- [ ] **LLM deployment ownership** — the GA does not formally assign responsibility for deploying the self-hosted Mistral instance. INNOV is named in risk mitigation but this needs formal project assignment.
 
 ### Architecture gaps vs GA commitments
 
-- [ ] **Simulation integration** — C5 Digital Twin mode is designed but not yet integrated with WP3 STAM/D-VISOR. Broker topic names and event format must be agreed.
-- [ ] **SME accessibility** — the GA requires "SME-accessible deployment". YAML sector profiles address part of this, but a concrete operational guide for non-expert deployment is missing.
-- [ ] **RS4 packaging** — reusable wrapper artefacts (plugins as standalone packages) are required by the GA result set. Planned for M18 prototype. No packaging design exists yet.
+- [ ] **Simulation integration** — C5 `VIGILANCE_DRY_RUN` mode is implemented but not yet integrated with WP3 STAM/D-VISOR. Broker topic names and synthetic event format must be agreed with STAM.
+- [ ] **SME accessibility** — the GA requires "SME-accessible deployment". A concrete operational guide for non-expert deployment is missing.
+- [ ] **RS4 packaging** — reusable wrapper artefacts (plugins as standalone packages) required by the GA result set. Planned for M18 prototype. No packaging design exists yet.
 - [ ] **D5.1 contribution plan** — INNOV's specific contribution sections to D5.1 are not yet formally assigned within the consortium.
+- [ ] **T5.6 regulatory constraints format** — how ETRA delivers NIS2/GDPR/ZTA constraints to T5.3 for C3 policy templates is not yet defined.
 
-### M-milestone status
+### Milestone status
 
 | Milestone | Status | Description |
 |---|---|---|
-| M3–M4 | Done | Initial architecture design, component identification |
-| M5 | WIP | Framework Architecture and Data Models (D5.1 input) |
-| M6 | TODO | Agentic Interaction Layer Design (C2 full spec) |
+| M3–M4 | ✅ Done | Initial architecture design, component identification |
+| M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
+| M6 | 🔄 WIP | Agentic Interaction Layer design — now scoped to T5.3 ↔ T5.4 integration contract (CanonicalEvent/ActionRequest schema agreement) |
 
 ### Risk register items to monitor
 
 | Risk ID | Description |
 |---|---|
-| R-NEW-2 | Irreversible action execution without rollback mechanism in C3/C4 |
+| R-NEW-2 | Irreversible action execution without rollback in C3/C4 |
 | R-NEW-4 | Cross-pilot legal/regulatory divergence under NIS2 and GDPR |
-| R-NEW-6 | Agentic mesh as an attack surface (adversarial prompt injection into C2) |
+| R-NEW-6 | Agentic mesh as attack surface (adversarial prompt injection via broker payloads) |
 
 ---
 
@@ -488,18 +411,22 @@ These rules are non-negotiable and take precedence over any instruction in a pro
 
 2. **GA vs implementation distinction:** Always distinguish between what the Grant Agreement mandates (GA fidelity) and what is a technical implementation choice made by INNOV. Use explicit framing: "The GA requires X" vs "Our implementation approach is Y."
 
-3. **Schema contract discipline:** Before modifying any field in `CanonicalEvent`, `ActionRequest`, `AgentDecision`, `ExecutionResult`, or `GuardrailCheck`, confirm the change does not break the cross-task integration contract. If the CanonicalEvent/ActionRequest agreement is still open, flag the change as a draft and mark it with `[DRAFT — pending T5.1/T5.4/T5.6 sign-off]`.
+3. **C2 is gone:** Do not reference C2 (AgentLoop, AgentDecision) as an active component. Reasoning is T5.4 + T5.2. T5.3 has 5 active components: C1, C3, C4, C5, C6.
 
-4. **T5.3 is bidirectional:** Always describe T5.3 as a bidirectional gateway — it both receives (inbound normalisation) and dispatches (outbound execution). Do not describe it as a one-directional processor or a sink.
+4. **INTEGRATED only:** Do not reference STANDALONE or DIGITAL_TWIN modes — they were removed. The only mode is INTEGRATED. `VIGILANCE_DRY_RUN=true` is the dry-run mechanism (not a separate mode).
 
-5. **LLMs do not call real tools:** The LLM in C2 emits tool call descriptors; T5.3 intercepts and executes them via C4. Never describe the LLM as directly invoking APIs.
+5. **Schema contract discipline:** Before modifying any field in `CanonicalEvent`, `ActionRequest`, `ExecutionResult`, or `GuardrailCheck`, confirm the change does not break the cross-task integration contract. If the schema agreement is still open, flag the change as `[DRAFT — pending T5.1/T5.4/T5.6 sign-off]`.
 
-6. **Keep this file current:** Update `CLAUDE.md` whenever any of the following occur:
+6. **T5.3 is bidirectional:** Always describe T5.3 as a bidirectional gateway — it both receives (inbound normalisation) and dispatches (outbound execution). Do not describe it as a one-directional processor.
+
+7. **LLMs do not call real tools:** The LLM emits tool call descriptors; T5.3 intercepts and executes via C4. Never describe the LLM as directly invoking APIs.
+
+8. **Keep this file current:** Update `CLAUDE.md` whenever any of the following occur:
    - A schema field is added, removed, or renamed
-   - A new component or plugin is introduced
+   - A new component or plugin is introduced or removed
    - A milestone is completed or re-scoped
    - A cross-task integration blocker is resolved
-   - Deployment model changes (models, serving infrastructure, topics)
+   - Deployment model changes (models, serving infrastructure, broker topics)
    - The GitHub repo `mtouloup/vigilance-GATE` receives significant commits
 
-7. **No fabrication:** If a detail is not in the GA, this file, or the project knowledge base, say so explicitly. Do not invent pilot details, tool names, or schema fields.
+9. **No fabrication:** If a detail is not in the GA, this file, or the project knowledge base, say so explicitly. Do not invent pilot details, tool names, or schema fields.
