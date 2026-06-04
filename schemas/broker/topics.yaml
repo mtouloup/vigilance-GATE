@@ -1,0 +1,174 @@
+# T5.3 Message Broker Integration Interface
+# ─────────────────────────────────────────────────────────────────────────────
+# Defines every broker topic consumed or published by the T5.3 Agentic Wrapper
+# Framework, including direction, producer/consumer roles, and payload shape.
+#
+# All queues are pre-declared in infra/rabbitmq/definitions.json so that
+# RabbitMQ creates them at startup — no channel errors on first publish.
+# ─────────────────────────────────────────────────────────────────────────────
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://vigilance-gate/schemas/broker/topics.yaml"
+title: T5.3 Message Broker Integration Interface
+
+broker:
+  type: RabbitMQ
+  protocol: AMQP 0-9-1
+  connection:
+    env_var: AMQP_URL
+    default_docker: "amqp://vigilance:vigilance@rabbitmq:5672/"
+    # When AMQP_URL is unset the pipeline uses InMemoryBroker (tests / local dev).
+    fallback: "InMemoryBroker (when AMQP_URL is unset)"
+  queue_config:
+    durable: true
+    delivery_mode: 2        # persistent messages survive broker restart
+    pre_declared: true
+    declaration_source: infra/rabbitmq/definitions.json
+
+topics:
+
+  # ── Inbound ────────────────────────────────────────────────────────────────
+
+  - name: pilot.events.raw
+    direction: inbound
+    description: >
+      Raw security events arriving from pilot tools (OTE SIEM, Siemens SCADA
+      monitors, Rotterdam port radar, CaixaBank fraud monitor). Entry point for
+      the T5.3 C1 normalization pipeline.
+    producers:
+      - OTE IDS/SIEM
+      - Siemens OT Monitor
+      - Rotterdam Port Radar
+      - CaixaBank Fraud Monitor
+      - Digital Twin (WP3 D-VISOR)  # reserved — post-M18 integration
+    consumers:
+      - "C1 — Event Ingestion & Normalization"
+    payload:
+      description: Wraps the raw event string or object under a 'raw' key.
+      supported_formats:
+        - CEF                         # OTE brute-force / SS7 alerts
+        - ECS                         # Elastic Common Schema
+        - "OT JSON (Siemens OPC-UA)"  # PLC / SCADA anomalies
+        - syslog                      # RFC 3164 / 5424
+        - "free-text (LLM fallback)"  # mistral:7b extracts fields when no parser matches
+      examples:
+        cef:
+          raw: "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"
+        ot_json:
+          raw:
+            plc: PLC-07
+            line: Line-3
+            protocol: OPC-UA
+            anomaly: register_write_out_of_range
+            severity: CRITICAL
+
+  - name: t53.action_requests
+    direction: inbound
+    description: >
+      ActionRequest dispatched by T5.4 to T5.3 after agent selection.
+      T5.4 enriches the CanonicalEvent with T5.1 RAG context, selects a T5.2
+      agent, and produces the ActionRequest. T5.3 runs C5 guardrail → C3 policy
+      translation → C4 dispatch on receipt.
+    producers:
+      - "T5.4 Orchestration"
+    consumers:
+      - "T53Pipeline — C5+C3+C4 execution half"
+    payload:
+      description: "Serialised ActionRequest — see schemas/models/action_request.schema.json"
+      schema_ref: "../models/action_request.schema.json"
+
+  - name: dt.events.synthetic
+    direction: inbound
+    description: >
+      Synthetic events injected by WP3 STAM/D-VISOR for Digital Twin simulation.
+      Processed identically to pilot.events.raw — distinguished by topic only.
+      Reserved for WP3 integration (planned post-M18).
+    producers:
+      - WP3 STAM D-VISOR Digital Twin
+      - WP3 simulation harness
+    consumers:
+      - "T53Pipeline — C1 (Digital Twin integration, post-M18)"
+    payload:
+      description: Same schema as pilot.events.raw; distinguished by topic only.
+      schema_ref: "topics.yaml#/topics/0/payload"
+
+  # ── Outbound ───────────────────────────────────────────────────────────────
+
+  - name: t53.canonical_events
+    direction: outbound
+    description: >
+      CanonicalEvent published by T5.3 C1 after normalization.
+      T5.4 consumes this to call T5.1 RAG for threat context, select a T5.2
+      agent, and dispatch an ActionRequest back via t53.action_requests.
+    producers:
+      - "T53Pipeline — C1 post-normalization"
+    consumers:
+      - "T5.4 Orchestration"
+      - "Monitoring / dashboards"
+    payload:
+      description: "Serialised CanonicalEvent — see schemas/models/canonical_event.schema.json"
+      schema_ref: "../models/canonical_event.schema.json"
+
+  - name: t53.policy_updates
+    direction: outbound
+    description: >
+      C3 NL→Rego policy rules published by T5.3 for T5.5 consumption.
+      T5.5 (Industry Specific Agentic Security Blueprints — STAM) uses these to
+      refine ZTA blueprints through stakeholder co-design sessions.
+      Fire-and-forget — T5.3 does not await T5.5 acknowledgement.
+      Only published when the incoming ActionRequest contains a policy_update field.
+    producers:
+      - "T53Pipeline — C3 PolicyTranslator"
+    consumers:
+      - "T5.5 ZTA Blueprint Refinement (STAM)"
+    payload:
+      description: Policy update message with Rego rule translated from NL by mistral-nemo.
+      schema:
+        request_id: "string (UUID)"
+        event_id:   "string (UUID)"
+        pilot:      "string — TELECOM | MARITIME | FINANCE | INDUSTRY_4"
+        sector:     "string"
+        nl_policy:  "string — original natural-language policy description"
+        rego_rule:  "string — OPA/Rego rule generated by C3 PolicyTranslator"
+        timestamp:  "string (ISO 8601)"
+
+  - name: t53.actions.dispatch
+    direction: outbound
+    description: >
+      Action dispatch messages published by T5.3 C4 for pilot tool execution.
+      Each pilot's cybersecurity tools (SIEM, IAM, SCADA, fraud engines) subscribe
+      and execute the requested actions autonomously.
+      Fire-and-forget — T5.3 does not await tool confirmation.
+      T5.3 immediately publishes the ExecutionResult to t53.results and returns.
+    producers:
+      - "T53Pipeline — C4 action dispatch"
+    consumers:
+      - "OTE SIEM / IAM / IDS (TELECOM pilot)"
+      - "Siemens SCADA / IAM (INDUSTRY_4 pilot)"
+      - "Rotterdam Port OPS / SIEM (MARITIME pilot)"
+      - "CaixaBank Fraud Engine / IAM (FINANCE pilot)"
+    payload:
+      description: Action dispatch message consumed by pilot tools.
+      schema:
+        request_id:       "string (UUID)"
+        event_id:         "string (UUID)"
+        pilot:            "string — TELECOM | MARITIME | FINANCE | INDUSTRY_4"
+        sector:           "string"
+        actions:          "array[string] — e.g. [block_ip, revoke_session, notify_soc]"
+        agent_confidence: "float (0.0–1.0)"
+        timestamp:        "string (ISO 8601)"
+
+  - name: t53.results
+    direction: outbound
+    description: >
+      ExecutionResult published by T5.3 after each ActionRequest is processed.
+      T5.4 consumes this to close the incident. Published immediately after
+      C4 dispatch — T5.3 does not wait for pilot tools to confirm execution.
+    producers:
+      - "T53Pipeline — C5 post-execution"
+    consumers:
+      - "T5.4 Orchestration (incident closure)"
+      - "Monitoring / dashboards"
+    payload:
+      description: "Serialised ExecutionResult — see schemas/models/execution_result.schema.json"
+      schema_ref: "../models/execution_result.schema.json"

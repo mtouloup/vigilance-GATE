@@ -1,0 +1,122 @@
+# Sector Profile Schema — T5.3 C6 Sector Profile Manager
+# ─────────────────────────────────────────────────────────────────────────────
+# Validates the four sector YAML profile files loaded at startup:
+#   profiles/telecom.yaml     — Pilot #1 OTE/GR    (TELECOM)
+#   profiles/maritime.yaml    — Pilot #2 Rotterdam  (MARITIME)
+#   profiles/finance.yaml     — Pilot #3 CaixaBank  (FINANCE)
+#   profiles/industry4.yaml   — Pilot #4 Siemens/RO (INDUSTRY_4)
+#
+# All four profiles are loaded into a single T53Pipeline instance. Pilot
+# selection happens per-event in C1, not at startup.
+# ─────────────────────────────────────────────────────────────────────────────
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://vigilance-gate/schemas/profiles/sector_profile.schema.yaml"
+title: SectorProfile
+description: >
+  Schema for T5.3 sector profile YAML files loaded by C6 — Sector Profile
+  Manager. One profile per GA pilot; all four are loaded at startup.
+type: object
+required:
+  - sector
+  - pilot
+  - tool_plugins
+  - policy_templates
+  - llm_system_prompt
+
+properties:
+
+  sector:
+    type: string
+    enum: [TELECOM, MARITIME, FINANCE, INDUSTRY_4]
+    description: >
+      Sector identifier. Must match the key used in T53Pipeline._profiles and
+      the SECTOR column in the pilot table. Determines which C4 adapter set
+      is loaded and which guardrail checks are active.
+
+  pilot:
+    type: string
+    description: >
+      Human-readable pilot identifier used in audit record prefixes and log
+      messages (e.g. OTE_GR → aud-OTE-*, Rotterdam_NL → aud-ROT-*,
+      CaixaBank_ES → aud-CAI-*, Siemens_RO → aud-SIE-*).
+
+  schema_extensions:
+    type: array
+    description: >
+      Additional fields injected into CanonicalEvent for this sector beyond
+      the common set. Allows sector-specific enrichment without changing the
+      shared model.
+    items:
+      type: object
+      required: [field, type]
+      properties:
+        field:
+          type: string
+        type:
+          type: string
+          enum: [string, bool, int, float]
+        default: {}   # any type
+
+  tool_plugins:
+    type: array
+    description: >
+      C4 adapter plugin names activated for this sector. Each name must match
+      a registered ToolAdapter subclass. Plugins are loaded once at startup
+      and reused across all events for that sector.
+    items:
+      type: string
+    examples:
+      - [ote_siem, ote_iam, ote_ids]
+      - [port_siem, port_iam, port_ops]
+      - [bank_siem, bank_iam, fraud_engine]
+      - [industrial_siem, ot_iam, scada_opcua]
+
+  policy_templates:
+    type: array
+    description: >
+      OPA/Rego policy template names available to C3 PolicyTranslator for this
+      sector. The mistral-nemo model selects the most appropriate template when
+      translating a natural-language policy_update string.
+    items:
+      type: string
+
+  llm_system_prompt:
+    type: string
+    description: >
+      System prompt injected into C3 PolicyTranslator (and formerly C2 AgentLoop)
+      for this sector's LLM persona. Grounds the model in sector-specific
+      terminology, threat vocabulary, and regulatory context
+      (e.g. PSD2/DORA for FINANCE, IEC 62443 for INDUSTRY_4).
+
+  ot_safety_flag:
+    type: boolean
+    default: false
+    description: >
+      When true, C5 SafetyGate applies OT-specific guardrail checks:
+        1. isolate_plc must use safe-state mode
+        2. ZTA policy scope must be zone-limited (not full OT network)
+      Only INDUSTRY_4 (Siemens/RO) sets this to true.
+
+  confidence_threshold:
+    type: number
+    minimum: 0
+    maximum: 1
+    default: 0.80
+    description: >
+      Minimum agent_confidence required for APPROVED guardrail verdict.
+      Requests below this threshold trigger ESCALATE → mistral:7b semantic review.
+      FINANCE uses 0.85 (higher bar to reduce false positives under PSD2/DORA).
+      All other sectors use the default 0.80.
+
+  protected_ranges:
+    type: array
+    description: >
+      CIDR ranges that must not be targeted by automated actions. Events whose
+      src_ip falls within these ranges trigger ESCALATE regardless of confidence,
+      requiring human (SOC analyst) review before execution.
+    items:
+      type: string
+      format: cidr
+
+additionalProperties: false

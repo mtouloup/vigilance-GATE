@@ -719,9 +719,9 @@ schemas/
     guardrail_check.schema.json
     audit_record.schema.json
   broker/
-    topics.json               Broker topics: direction, producers, consumers, payloads
+    topics.yaml                Broker topics: direction, producers, consumers, payloads
   profiles/
-    sector_profile.schema.json  Validates all four sector YAML profiles
+    sector_profile.schema.yaml  Validates all four sector YAML profiles
 ```
 
 See [`schemas/README.md`](schemas/README.md) for the pipeline data-flow table and schema
