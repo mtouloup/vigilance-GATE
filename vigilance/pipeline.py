@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from vigilance.broker import BaseBroker, create_broker
 from vigilance.components.c1_ingestion.normalizer import Normalizer
 from vigilance.components.c3_execution.policy_translator import PolicyTranslator
+from vigilance.workflow_logger import WorkflowCSVLogger
 from vigilance.components.c4_adapters.base import ToolAdapter
 from vigilance.components.c5_safety.audit import AuditLog
 from vigilance.components.c5_safety.guardrail import SafetyGate
@@ -113,8 +114,11 @@ class T53Pipeline:
             for sector_key, builder in _ADAPTER_BUILDERS.items()
         }
 
-        # Event cache: event_id → CanonicalEvent (set by ingest_event, read by execute_action_request)
-        self._event_cache: dict[str, CanonicalEvent] = {}
+        # Event cache: event_id → {event, raw_event, parser_used, c1_llm_invoked, c1_llm_fields}
+        self._event_cache: dict[str, dict] = {}
+
+        # Workflow audit CSV
+        self._csv_logger = WorkflowCSVLogger()
 
         # C5
         self._guardrail = SafetyGate()
@@ -150,7 +154,8 @@ class T53Pipeline:
         back to T5.3 via t53.action_requests.
         """
         logger.info("[C1] Normalizing event...")
-        event = self._normalizer.normalize(raw_event)
+        meta = self._normalizer.normalize_with_meta(raw_event)
+        event = meta.event
 
         profile = self._profile_for(event.pilot)
         event = self._normalizer._enrich_with_profile(event, profile)
@@ -160,7 +165,13 @@ class T53Pipeline:
             f"severity={event.severity} pilot={event.pilot}"
         )
 
-        self._event_cache[event.event_id] = event
+        self._event_cache[event.event_id] = {
+            "event":          event,
+            "raw_event":      raw_event,
+            "parser_used":    meta.parser_used,
+            "c1_llm_invoked": meta.llm_invoked,
+            "c1_llm_fields":  meta.llm_fields,
+        }
         self._broker.publish(TOPIC_CANONICAL_EVENTS, event.model_dump(mode="json"))
         logger.info(f"[C1] CanonicalEvent → {TOPIC_CANONICAL_EVENTS} (awaiting T5.4 ActionRequest)")
         return event
@@ -179,8 +190,8 @@ class T53Pipeline:
             f"actions={request.actions} confidence={request.agent_confidence:.2f}"
         )
 
-        event = self._event_cache.get(request.event_id)
-        if event is None:
+        cached = self._event_cache.get(request.event_id)
+        if cached is None:
             logger.warning(f"event_id={request.event_id} not in cache — using minimal placeholder")
             event = CanonicalEvent(
                 event_id=request.event_id,
@@ -189,9 +200,15 @@ class T53Pipeline:
                 severity="HIGH",
                 timestamp=datetime.now(timezone.utc),
             )
+            c1_ctx = {"raw_event": None, "parser_used": "UNKNOWN",
+                      "c1_llm_invoked": False, "c1_llm_fields": None}
+        else:
+            event = cached["event"]
+            c1_ctx = {k: cached[k] for k in ("raw_event", "parser_used",
+                                              "c1_llm_invoked", "c1_llm_fields")}
 
         profile = self._profile_for(event.pilot)
-        return self._guardrail_and_execute(request, event, profile)
+        return self._guardrail_and_execute(request, event, profile, c1_ctx)
 
     # ── Guardrail + dispatch ───────────────────────────────────────────────────
 
@@ -200,6 +217,7 @@ class T53Pipeline:
         request: ActionRequest,
         event: CanonicalEvent,
         profile: SectorProfile,
+        c1_ctx: dict | None = None,
     ) -> ExecutionResult:
         audit_id = self._audit.open_record(
             pilot_id=profile.pilot,
@@ -215,6 +233,7 @@ class T53Pipeline:
             f"reasons={guardrail.reasons}"
         )
 
+        rego_rule: str | None = None
         if guardrail.verdict == GuardrailVerdict.REJECTED:
             logger.info("[C5] REJECTED — skipping dispatch")
             result = ExecutionResult(
@@ -234,11 +253,12 @@ class T53Pipeline:
                 overall_success=False,
                 timestamp=datetime.now(timezone.utc),
             )
+            rego_rule = None
         elif self._dry_run:
             logger.info("[C5] dry-run — skipping broker dispatch")
-            result = self._dry_run_result(request, event, profile)
+            result, rego_rule = self._dry_run_result(request, event, profile), None
         else:
-            result = self._dispatch(request, event, profile)
+            result, rego_rule = self._dispatch(request, event, profile)
 
         logger.info(
             f"[C3+C4] overall_success={result.overall_success} "
@@ -249,6 +269,33 @@ class T53Pipeline:
         logger.info(f"[C5] Audit record closed: {audit_id}")
 
         self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
+
+        # ── Workflow audit CSV ────────────────────────────────────────────────
+        ctx = c1_ctx or {}
+        self._csv_logger.append(
+            event_id=event.event_id,
+            pilot=profile.pilot,
+            severity=event.severity,
+            raw_event=ctx.get("raw_event"),
+            parser_used=ctx.get("parser_used", "UNKNOWN"),
+            c1_llm_invoked=ctx.get("c1_llm_invoked", False),
+            c1_llm_fields=ctx.get("c1_llm_fields"),
+            canonical_event=event.model_dump(mode="json"),
+            request_id=request.request_id,
+            actions_requested=request.actions,
+            agent_confidence=request.agent_confidence,
+            guardrail_verdict=guardrail.verdict.value,
+            guardrail_reasons=guardrail.reasons,
+            c5_llm_invoked=guardrail.llm_invoked,
+            c5_llm_response=guardrail.llm_response,
+            policy_update_nl=request.policy_update,
+            c3_llm_invoked=bool(request.policy_update),
+            c3_rego_rule=rego_rule,
+            actions_dispatched=[r.action for r in result.action_results],
+            overall_success=result.overall_success,
+            audit_id=audit_id,
+        )
+
         return result
 
     def _dispatch(
@@ -256,11 +303,13 @@ class T53Pipeline:
         request: ActionRequest,
         event: CanonicalEvent,
         profile: SectorProfile,
-    ) -> ExecutionResult:
+    ) -> tuple[ExecutionResult, str | None]:
         """C3+C4 — translate policy to Rego, fire-and-forget to T5.5 and pilot tools."""
+        rego: str | None = None
         # C3: NL policy → Rego → T5.5 ZTA blueprint refinement
         if request.policy_update:
             rego = self._policy_translator.translate(request.policy_update)
+            logger.info(f"[C3] NL→Rego translation complete ({len(rego)} chars)")
             self._broker.publish(TOPIC_POLICY_UPDATES, {
                 "request_id": request.request_id,
                 "event_id":   request.event_id,
@@ -301,7 +350,7 @@ class T53Pipeline:
             ],
             overall_success=True,
             timestamp=datetime.now(timezone.utc),
-        )
+        ), rego
 
     def _dry_run_result(self, request: ActionRequest, event: CanonicalEvent, profile: SectorProfile) -> ExecutionResult:
         return ExecutionResult(
