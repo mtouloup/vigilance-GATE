@@ -1,6 +1,11 @@
 # Claude Code internal artifacts
 .claude/
 
+# Generated runtime output — persisted via Docker bind mount on host
+# Keep the directory stub tracked; ignore everything generated inside it
+data/*
+!data/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
