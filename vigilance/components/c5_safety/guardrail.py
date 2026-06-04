@@ -50,6 +50,8 @@ class SafetyGate:
         rejected = False
         escalate = False
         ot_safety_checked = False
+        self._llm_was_invoked = False
+        self._llm_raw_response: str | None = None
 
         # Check 1: Confidence threshold
         threshold = getattr(profile, "confidence_threshold", 0.80)
@@ -123,6 +125,8 @@ class SafetyGate:
             verdict=verdict,
             reasons=reasons,
             ot_safety_checked=ot_safety_checked,
+            llm_invoked=self._llm_was_invoked,
+            llm_response=self._llm_raw_response,
         )
 
     def _semantic_review(
@@ -149,6 +153,8 @@ class SafetyGate:
         }
         try:
             raw = llm.semantic_check(_SEMANTIC_SYSTEM, [user_message])
+            self._llm_was_invoked = True
+            self._llm_raw_response = raw
             result = json.loads(raw)
             semantic_verdict = result.get("semantic_verdict", "").upper()
             llm_reason = result.get("reason", "LLM semantic review completed")
