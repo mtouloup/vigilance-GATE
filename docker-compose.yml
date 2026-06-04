@@ -111,6 +111,10 @@ services:
       # VIGILANCE_DRY_RUN: "true"   # uncomment to skip broker dispatch (dev only)
     volumes:
       - ./data:/app/data   # generated files → persisted on your host under ./data/
+    # chmod ensures the bind-mounted directory is writable regardless of Docker
+    # user-namespace remapping or host filesystem ownership at startup.
+    command: >
+      sh -c "chmod 777 /app/data 2>/dev/null || true && python -m vigilance.main"
     depends_on:
       rabbitmq:
         condition: service_healthy

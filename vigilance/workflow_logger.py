@@ -67,6 +67,7 @@ class WorkflowCSVLogger:
 
     def __init__(self, path: str | None = None) -> None:
         self._path = Path(path or os.environ.get("WORKFLOW_CSV_PATH", "workflow_audit.csv"))
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._ensure_header()
 
