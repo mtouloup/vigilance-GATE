@@ -72,7 +72,7 @@ class OllamaLLMProvider:
         base_url: str = "http://localhost:11434",
         fast_model: str = FAST_MODEL,
         reasoning_model: str = REASONING_MODEL,
-        timeout: int = 120,
+        timeout: int = 300,
     ) -> None:
         try:
             import requests as _req  # noqa: F401
@@ -89,11 +89,11 @@ class OllamaLLMProvider:
     def complete(self, system_prompt: str, messages: list[dict]) -> str:
         """Run a chat completion using the reasoning model (mistral-nemo).
 
-        Augments the system prompt with JSON format instructions so the
-        agentic loop always receives parseable output.
+        Returns free-form text — no JSON constraint is applied, so callers
+        (e.g. PolicyTranslator) can receive Rego, natural language, or any
+        other non-JSON output format.
         """
-        augmented_system = system_prompt + _AGENTIC_JSON_INSTRUCTION
-        return self._chat(self.reasoning_model, augmented_system, messages)
+        return self._chat(self.reasoning_model, system_prompt, messages, response_format=None)
 
     def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
         """Run a semantic guardrail review using the fast model (mistral:7b).
@@ -106,7 +106,7 @@ class OllamaLLMProvider:
             + "\n\nRESPONSE FORMAT: respond with valid JSON only.\n"
             '{"semantic_verdict": "APPROVE"|"REJECT", "reason": "<short explanation>"}'
         )
-        return self._chat(self.fast_model, semantic_system, messages)
+        return self._chat(self.fast_model, semantic_system, messages, response_format="json")
 
     def extract_fields(self, raw_text: str, fields: list[str]) -> dict:
         """Extract structured fields from raw text using the fast model (mistral:7b).
@@ -120,7 +120,7 @@ class OllamaLLMProvider:
             f"From this security event:\n{raw_text[:2000]}"
         )
         messages = [{"role": "user", "content": user_content}]
-        raw_response = self._chat(self.fast_model, system, messages)
+        raw_response = self._chat(self.fast_model, system, messages, response_format="json")
 
         try:
             result = json.loads(raw_response)
@@ -131,17 +131,30 @@ class OllamaLLMProvider:
 
         return {field: None for field in fields}
 
-    def _chat(self, model: str, system_prompt: str, messages: list[dict]) -> str:
-        """POST to /api/chat and return the assistant message content."""
+    def _chat(
+        self,
+        model: str,
+        system_prompt: str,
+        messages: list[dict],
+        response_format: str | None = None,
+    ) -> str:
+        """POST to /api/chat and return the assistant message content.
+
+        Args:
+            response_format: Pass ``"json"`` to engage Ollama's constrained JSON
+                sampler (only for methods that truly need JSON output).
+                Pass ``None`` (default) for free-form output such as Rego rules.
+        """
         import requests
 
-        payload = {
+        payload: dict = {
             "model": model,
             "messages": [{"role": "system", "content": system_prompt}] + messages,
             "stream": False,
-            "format": "json",
-            "options": {"temperature": 0.1},  # Low temperature for deterministic JSON
+            "options": {"temperature": 0.1},
         }
+        if response_format is not None:
+            payload["format"] = response_format
 
         url = f"{self._base_url}/api/chat"
         try:

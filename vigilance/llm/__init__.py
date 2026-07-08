@@ -16,7 +16,8 @@ def create_llm(ollama_url: str | None = None) -> LLMProvider:
     url = ollama_url or os.getenv("OLLAMA_BASE_URL")
     if url:
         from vigilance.llm.ollama_provider import OllamaLLMProvider
-        return OllamaLLMProvider(base_url=url)
+        timeout = int(os.getenv("OLLAMA_TIMEOUT", "300"))
+        return OllamaLLMProvider(base_url=url, timeout=timeout)
     return StubLLMProvider()
 
 
