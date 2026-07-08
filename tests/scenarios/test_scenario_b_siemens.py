@@ -21,7 +21,7 @@ def pipeline():
 
 def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.91, policy=None):
     event = pipeline.ingest_event(raw)
-    return pipeline.execute_action_request({
+    result, _rego = pipeline.execute_action_request({
         "request_id":       str(uuid.uuid4()),
         "event_id":         event.event_id,
         "pilot":            event.pilot,
@@ -29,6 +29,7 @@ def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.91, pol
         "agent_confidence": confidence,
         "policy_update":    policy,
     })
+    return result
 
 
 def test_scenario_b_ingest_detects_industry4(pipeline):

@@ -26,13 +26,14 @@ def pipeline():
 
 def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.93):
     event = pipeline.ingest_event(raw)
-    return pipeline.execute_action_request({
+    result, _rego = pipeline.execute_action_request({
         "request_id":       str(uuid.uuid4()),
         "event_id":         event.event_id,
         "pilot":            event.pilot,
         "actions":          actions,
         "agent_confidence": confidence,
     })
+    return result
 
 
 def test_scenario_d_ingest_detects_finance(pipeline):
@@ -82,7 +83,7 @@ def test_scenario_d_higher_confidence_threshold(pipeline):
 def test_scenario_d_guardrail_rejects_too_many_actions(pipeline):
     """Guardrail always rejects when action count exceeds 5 (proportionality check)."""
     event = pipeline.ingest_event(RAW_FRAUD_EVENT)
-    result = pipeline.execute_action_request({
+    result, _rego = pipeline.execute_action_request({
         "request_id":       str(uuid.uuid4()),
         "event_id":         event.event_id,
         "pilot":            event.pilot,
