@@ -39,6 +39,25 @@ class TestTelecomAdapters:
         assert result.plugin == "ote_ids"
         assert result.latency_ms >= 180
 
+    def test_siem_create_incident(self):
+        plugin = TeleSIEM()
+        result = plugin.execute("create_incident", {"target": "brute-force-auth-server-01"})
+        assert result.success
+        assert result.response_code == 201
+        assert result.plugin == "ote_siem"
+        assert "INC-" in result.message
+        assert "brute-force-auth-server-01" in result.message
+
+    def test_siem_create_incident_no_target(self):
+        plugin = TeleSIEM()
+        result = plugin.execute("create_incident", {})
+        assert result.success
+        assert "unspecified" in result.message
+
+    def test_siem_supported_actions(self):
+        plugin = TeleSIEM()
+        assert set(plugin.supported_actions) == {"block_ip", "query_logs", "create_incident"}
+
     def test_unsupported_action(self):
         plugin = TeleSIEM()
         result = plugin.execute("nonexistent", {})
@@ -86,6 +105,25 @@ class TestIndustry4Adapters:
         result = plugin.execute("update_zt_policy", {})
         assert result.success
         assert result.latency_ms >= 90
+
+    def test_industrial_siem_create_incident(self):
+        plugin = IndSIEM()
+        result = plugin.execute("create_incident", {"target": "plc-anomaly-line-7"})
+        assert result.success
+        assert result.response_code == 201
+        assert result.plugin == "industrial_siem"
+        assert "INC-" in result.message
+        assert "plc-anomaly-line-7" in result.message
+
+    def test_industrial_siem_create_incident_no_target(self):
+        plugin = IndSIEM()
+        result = plugin.execute("create_incident", {})
+        assert result.success
+        assert "unspecified" in result.message
+
+    def test_industrial_siem_supported_actions(self):
+        plugin = IndSIEM()
+        assert set(plugin.supported_actions) == {"query_logs", "block_ip", "create_incident"}
 
     def test_supported_actions_listed(self):
         plugin = SCADAPlugin()
