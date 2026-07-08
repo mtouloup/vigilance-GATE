@@ -1,6 +1,8 @@
 """Industrial SIEM plugin — stub adapter for Siemens Industry 4.0 pilot."""
 from __future__ import annotations
 
+import uuid
+
 from vigilance.components.c4_adapters.base import ToolAdapter
 from vigilance.models.execution_result import ActionResult
 
@@ -17,7 +19,7 @@ class SIEMPlugin(ToolAdapter):
 
     @property
     def supported_actions(self) -> list[str]:
-        return ["query_logs", "block_ip"]
+        return ["query_logs", "block_ip", "create_incident"]
 
     def execute(self, action: str, params: dict) -> ActionResult:
         if action == "query_logs":
@@ -38,6 +40,8 @@ class SIEMPlugin(ToolAdapter):
                 response_code=200,
                 message="IT/OT boundary firewall rule applied — IP blocked",
             )
+        elif action == "create_incident":
+            return self._create_incident(params)
         else:
             return ActionResult(
                 action=action,
@@ -47,3 +51,14 @@ class SIEMPlugin(ToolAdapter):
                 response_code=400,
                 message=f"Unsupported action: {action}",
             )
+
+    def _create_incident(self, params: dict) -> ActionResult:
+        incident_id = f"INC-{uuid.uuid4().hex[:8]}"
+        return ActionResult(
+            action="create_incident",
+            plugin=self.plugin_name,
+            success=True,
+            latency_ms=47,
+            response_code=201,
+            message=f"Incident {incident_id} created: {params.get('target', 'unspecified')}",
+        )

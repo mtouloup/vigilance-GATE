@@ -1,0 +1,351 @@
+<mxfile host="Claude" modified="2026-07-01T00:00:00.000Z" agent="Claude" version="21.0.0" type="device">
+  <diagram id="wp5-operational-workflow" name="WP5 Operational Workflow">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- TITLE                                                  -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="title" value="VIGILANCE — WP5 Agentic AI Cybersecurity Platform&#xa;Operational Workflow" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;fontColor=#1a237e;" vertex="1" parent="1">
+          <mxGeometry x="320" y="20" width="1000" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- PILOT TOOLS (left lane)                               -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="lane-pilots" value="Pilot Infrastructure&#xa;(T6.x)" style="swimlane;startSize=40;fillColor=#e8f5e9;strokeColor=#388e3c;fontStyle=1;fontSize=12;fontColor=#1b5e20;horizontal=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="100" width="160" height="980" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ote" value="OTE (Telecom)&#xa;Splunk · AD&#xa;CrowdStrike" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontSize=10;fontStyle=1;" vertex="1" parent="lane-pilots">
+          <mxGeometry x="15" y="80" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="siemens" value="Siemens (Industry 4.0)&#xa;Splunk · AD&#xa;Suricata IDS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontSize=10;fontStyle=1;" vertex="1" parent="lane-pilots">
+          <mxGeometry x="15" y="180" width="130" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pilot-note" value="(Maritime · Finance&#xa;GA transferability)" style="text;html=1;align=center;fontSize=9;fontColor=#555;fontStyle=2;" vertex="1" parent="lane-pilots">
+          <mxGeometry x="10" y="270" width="140" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="pilot-recv" value="Pilot Tools&#xa;receive actions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#388e3c;fontSize=10;" vertex="1" parent="lane-pilots">
+          <mxGeometry x="15" y="760" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- MESSAGE BROKER                                         -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="broker-bg" value="RabbitMQ Message Broker" style="swimlane;startSize=30;fillColor=#fff8e1;strokeColor=#f9a825;fontStyle=1;fontSize=11;fontColor=#e65100;" vertex="1" parent="1">
+          <mxGeometry x="210" y="100" width="200" height="980" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-raw" value="pilot.events.raw" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="80" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-canonical" value="t53.canonical_events" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="240" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-action-req" value="t53.action_requests" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="450" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-results" value="t53.results" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="650" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-policy" value="t53.policy_updates" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="770" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="q-dispatch" value="t53.actions.dispatch" style="shape=mxgraph.cisco.servers.standard_server;fillColor=#fff59d;strokeColor=#f9a825;fontSize=9;fontStyle=1;whiteSpace=wrap;" vertex="1" parent="broker-bg">
+          <mxGeometry x="50" y="870" width="100" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- T5.3 — AGENTIC WRAPPER FRAMEWORK                      -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="t53-bg" value="T5.3 — Agentic Wrapper Framework (INNOV)" style="swimlane;startSize=40;fillColor=#e3f2fd;strokeColor=#1565c0;fontStyle=1;fontSize=13;fontColor=#0d47a1;" vertex="1" parent="1">
+          <mxGeometry x="430" y="100" width="460" height="980" as="geometry" />
+        </mxCell>
+
+        <!-- C6 -->
+        <mxCell id="c6" value="C6 — Sector Profile Manager&#xa;Loads YAML profiles at startup&#xa;Selects C4 adapter set per event" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="270" y="60" width="175" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- C1 -->
+        <mxCell id="c1" value="C1 — Event Ingestion &amp; Normalization&#xa;&#xa;Parser chain: CEF → ECS → OT JSON → Syslog&#xa;LLM fallback: Mistral 7B (unknown formats)&#xa;Generates UUID event_id (always T5.3-owned)&#xa;Publishes CanonicalEvent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="15" y="60" width="240" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- C5 safety gate -->
+        <mxCell id="c5-gate" value="C5 — Safety Gate (pre-execution)&#xa;&#xa;① confidence ≥ 0.80&#xa;② src_ip not in protected ranges&#xa;③ actions ≤ 5 (proportionality)&#xa;④ OT: isolate_plc safe-state&#xa;⑤ OT: ZTA scope zone-limited&#xa;&#xa;ESCALATE → Mistral 7B semantic review&#xa;→ APPROVED / REJECTED / ESCALATE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="15" y="300" width="240" height="170" as="geometry" />
+        </mxCell>
+
+        <!-- C3 -->
+        <mxCell id="c3" value="C3 — Policy Execution&#xa;&#xa;NL → OPA/Rego translation&#xa;(Mistral Nemo 12B, only if&#xa;policy_update present)&#xa;Publishes to t53.policy_updates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="15" y="530" width="240" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- C4 -->
+        <mxCell id="c4" value="C4 — Tool Adapter Layer&#xa;&#xa;TELECOM:    Splunk · AD · CrowdStrike&#xa;INDUSTRY_4: Splunk · AD · Suricata&#xa;MARITIME:   Elastic · Keycloak · Suricata&#xa;FINANCE:    Elastic · Keycloak · SentinelOne&#xa;&#xa;Publishes to t53.actions.dispatch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="15" y="700" width="240" height="130" as="geometry" />
+        </mxCell>
+
+        <!-- Audit CSV -->
+        <mxCell id="audit-csv" value="workflow_audit.csv&#xa;(host: ./data/)" style="shape=mxgraph.flowchart.document;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#0277bd;fontSize=9;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="270" y="820" width="160" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="c5-audit-close" value="C5 — Audit Closure&#xa;ExecutionResult + CSV row" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontSize=10;fontStyle=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="15" y="850" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- LLM box inside T5.3 -->
+        <mxCell id="llm-box" value="Ollama LLM Server&#xa;mistral:7b  |  mistral-nemo" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8eaf6;strokeColor=#3949ab;fontSize=10;fontStyle=1;dashed=1;" vertex="1" parent="t53-bg">
+          <mxGeometry x="270" y="430" width="175" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- T5.4 — GFT ORCHESTRATOR                               -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="t54-bg" value="T5.4 — GFT Orchestrator" style="swimlane;startSize=40;fillColor=#fce4ec;strokeColor=#c62828;fontStyle=1;fontSize=12;fontColor=#b71c1c;" vertex="1" parent="1">
+          <mxGeometry x="910" y="100" width="220" height="440" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t54-consume" value="Consumes&#xa;t53.canonical_events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=10;" vertex="1" parent="t54-bg">
+          <mxGeometry x="20" y="60" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t54-reason" value="Agent Reasoning&#xa;(GFT Orchestration Engine)&#xa;&#xa;Selects actions, sets confidence,&#xa;optionally adds policy_update" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=10;fontStyle=1;" vertex="1" parent="t54-bg">
+          <mxGeometry x="20" y="140" width="180" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t54-publish" value="Publishes ActionRequest&#xa;→ t53.action_requests" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=10;" vertex="1" parent="t54-bg">
+          <mxGeometry x="20" y="270" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t54-results" value="Consumes t53.results&#xa;(ExecutionResult)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffcdd2;strokeColor=#c62828;fontSize=10;" vertex="1" parent="t54-bg">
+          <mxGeometry x="20" y="350" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- T5.2 — AEGIS                                          -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="t52-bg" value="T5.2 — AEGIS&#xa;Agent Repository" style="swimlane;startSize=40;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontStyle=1;fontSize=12;fontColor=#4a148c;" vertex="1" parent="1">
+          <mxGeometry x="910" y="560" width="220" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t52-results" value="Consumes t53.results&#xa;Updates agent knowledge base" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontSize=10;" vertex="1" parent="t52-bg">
+          <mxGeometry x="20" y="55" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- T5.5 — ZTA ENGINE                                     -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="t55-bg" value="T5.5 — ZTA Policy Engine" style="swimlane;startSize=40;fillColor=#e8f5e9;strokeColor=#2e7d32;fontStyle=1;fontSize=12;fontColor=#1b5e20;" vertex="1" parent="1">
+          <mxGeometry x="910" y="740" width="220" height="160" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t55-rego" value="Consumes t53.policy_updates&#xa;Enforces Rego rules&#xa;(OPA engine)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontSize=10;" vertex="1" parent="t55-bg">
+          <mxGeometry x="20" y="55" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- T5.6 — ETRA                                           -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="t56-bg" value="T5.6 — ETRA&#xa;Regulatory Constraints" style="swimlane;startSize=40;fillColor=#fff3e0;strokeColor=#e65100;fontStyle=1;fontSize=12;fontColor=#bf360c;" vertex="1" parent="1">
+          <mxGeometry x="910" y="920" width="220" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="t56-content" value="NIS2 · GDPR · ZTA constraints&#xa;→ C3 policy templates&#xa;(format TBD with consortium)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#e65100;fontSize=10;" vertex="1" parent="t56-bg">
+          <mxGeometry x="20" y="55" width="180" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- T5.1 -->
+        <mxCell id="t51" value="T5.1 — Data Models &amp; Schemas&#xa;(GFT) — CanonicalEvent / ActionRequest&#xa;schema agreement pending" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#757575;fontSize=10;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="280" width="220" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- EDGES — Pilot → Broker                                 -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="e-ote-raw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#388e3c;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" source="ote" target="q-raw" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e-sie-raw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#388e3c;strokeWidth=2;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" source="siemens" target="q-raw" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- raw → C1 -->
+        <mxCell id="e-raw-c1" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#f9a825;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-raw" target="c1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C1 → canonical -->
+        <mxCell id="e-c1-can" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="c1" target="q-canonical" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- canonical → T5.4 -->
+        <mxCell id="e-can-t54" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#c62828;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-canonical" target="t54-consume" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- T5.4 internal -->
+        <mxCell id="e-t54-int1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#c62828;strokeWidth=1.5;" edge="1" source="t54-consume" target="t54-reason" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-t54-int2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#c62828;strokeWidth=1.5;" edge="1" source="t54-reason" target="t54-publish" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- T5.4 → action_requests -->
+        <mxCell id="e-t54-req" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#c62828;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="t54-publish" target="q-action-req" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- action_requests → C5 -->
+        <mxCell id="e-req-c5" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#f9a825;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-action-req" target="c5-gate" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C5 → C3 -->
+        <mxCell id="e-c5-c3" value="APPROVED" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2e7d32;strokeWidth=2;fontColor=#2e7d32;fontStyle=1;fontSize=9;" edge="1" source="c5-gate" target="c3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C3 → C4 -->
+        <mxCell id="e-c3-c4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=2;" edge="1" source="c3" target="c4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C3 → policy_updates -->
+        <mxCell id="e-c3-policy" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="c3" target="q-policy" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C4 → dispatch -->
+        <mxCell id="e-c4-disp" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="c4" target="q-dispatch" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C4 → C5 audit close -->
+        <mxCell id="e-c4-audit" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=1.5;" edge="1" source="c4" target="c5-audit-close" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C5 audit close → results queue -->
+        <mxCell id="e-audit-res" value="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="c5-audit-close" target="q-results" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C5 audit → CSV -->
+        <mxCell id="e-audit-csv" value="append row" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#0277bd;strokeWidth=1.5;dashed=1;fontStyle=1;fontSize=9;" edge="1" source="c5-audit-close" target="audit-csv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- dispatch → pilot-recv -->
+        <mxCell id="e-disp-pilot" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#388e3c;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-dispatch" target="pilot-recv" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- results → T5.4 -->
+        <mxCell id="e-res-t54" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#c62828;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-results" target="t54-results" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- results → T5.2 -->
+        <mxCell id="e-res-t52" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#6a1b9a;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-results" target="t52-results" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- policy_updates → T5.5 -->
+        <mxCell id="e-policy-t55" value="consume" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2e7d32;strokeWidth=2;fontStyle=1;fontSize=9;" edge="1" source="q-policy" target="t55-rego" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- LLM ↔ C1, C5, C3 (dashed) -->
+        <mxCell id="e-llm-c1" value="7B fallback" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3949ab;strokeWidth=1.5;dashed=1;fontStyle=2;fontSize=9;" edge="1" source="llm-box" target="c1" parent="t53-bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-llm-c5" value="7B ESCALATE" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3949ab;strokeWidth=1.5;dashed=1;fontStyle=2;fontSize=9;" edge="1" source="llm-box" target="c5-gate" parent="t53-bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-llm-c3" value="Nemo NL→Rego" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3949ab;strokeWidth=1.5;dashed=1;fontStyle=2;fontSize=9;" edge="1" source="llm-box" target="c3" parent="t53-bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- C6 → C1 -->
+        <mxCell id="e-c6-c1" value="sector profile" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#1565c0;strokeWidth=1.5;dashed=1;fontStyle=2;fontSize=9;" edge="1" source="c6" target="c1" parent="t53-bg">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- T5.6 → T5.3 (dashed, future) -->
+        <mxCell id="e-t56-c3" value="regulatory constraints&#xa;(format TBD)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#e65100;strokeWidth=1.5;dashed=1;fontStyle=2;fontSize=9;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" edge="1" source="t56-content" target="c3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ══════════════════════════════════════════════════════ -->
+        <!-- LEGEND                                                 -->
+        <!-- ══════════════════════════════════════════════════════ -->
+        <mxCell id="legend-bg" value="Legend" style="swimlane;startSize=25;fillColor=#fafafa;strokeColor=#bdbdbd;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="380" width="340" height="270" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg1" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#388e3c;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="legend-bg">
+          <mxGeometry x="20" y="50" width="80" height="10" relative="0" as="geometry"><Array as="points"><mxPoint x="100" y="55"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="leg1-lbl" value="Pilot ↔ Broker" style="text;html=1;fontSize=10;" vertex="1" parent="legend-bg"><mxGeometry x="110" y="44" width="160" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="leg2" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#1565c0;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="legend-bg">
+          <mxGeometry x="20" y="90" width="80" height="10" relative="0" as="geometry"><Array as="points"><mxPoint x="100" y="95"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="leg2-lbl" value="T5.3 internal / Broker publish" style="text;html=1;fontSize=10;" vertex="1" parent="legend-bg"><mxGeometry x="110" y="84" width="200" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="leg3" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#c62828;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="legend-bg">
+          <mxGeometry x="20" y="130" width="80" height="10" relative="0" as="geometry"><Array as="points"><mxPoint x="100" y="135"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="leg3-lbl" value="T5.4 (GFT) flow" style="text;html=1;fontSize=10;" vertex="1" parent="legend-bg"><mxGeometry x="110" y="124" width="180" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="leg4" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#3949ab;strokeWidth=1.5;dashed=1;endArrow=block;endFill=1;" edge="1" parent="legend-bg">
+          <mxGeometry x="20" y="170" width="80" height="10" relative="0" as="geometry"><Array as="points"><mxPoint x="100" y="175"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="leg4-lbl" value="LLM call (conditional)" style="text;html=1;fontSize=10;" vertex="1" parent="legend-bg"><mxGeometry x="110" y="164" width="180" height="22" as="geometry"/></mxCell>
+
+        <mxCell id="leg5" value="" style="edgeStyle=orthogonalEdgeStyle;html=1;strokeColor=#e65100;strokeWidth=1.5;dashed=1;endArrow=block;endFill=1;" edge="1" parent="legend-bg">
+          <mxGeometry x="20" y="210" width="80" height="10" relative="0" as="geometry"><Array as="points"><mxPoint x="100" y="215"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="leg5-lbl" value="Future / TBD interface" style="text;html=1;fontSize=10;" vertex="1" parent="legend-bg"><mxGeometry x="110" y="204" width="180" height="22" as="geometry"/></mxCell>
+
+        <!-- Step numbers -->
+        <mxCell id="step1" value="①" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="148" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="step2" value="②" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="298" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="step3" value="③" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="198" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="step4" value="④" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="498" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="step5" value="⑤" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="368" y="658" width="30" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="step6" value="⑥" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1a237e;fontColor=#fff;strokeColor=#1a237e;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="698" width="30" height="30" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

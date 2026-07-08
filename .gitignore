@@ -5,6 +5,8 @@
 # Keep the directory stub tracked; ignore everything generated inside it
 data/*
 !data/.gitkeep
+# Default fallback path when WORKFLOW_CSV_PATH env var is not set (dev/test runs)
+workflow_audit.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
