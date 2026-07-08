@@ -25,13 +25,14 @@ def pipeline():
 
 def _ingest_and_execute(pipeline, raw, actions=T54_ACTIONS, confidence=0.88):
     event = pipeline.ingest_event(raw)
-    return pipeline.execute_action_request({
+    result, _rego = pipeline.execute_action_request({
         "request_id":       str(uuid.uuid4()),
         "event_id":         event.event_id,
         "pilot":            event.pilot,
         "actions":          actions,
         "agent_confidence": confidence,
     })
+    return result
 
 
 def test_scenario_c_ingest_detects_maritime(pipeline):

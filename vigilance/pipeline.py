@@ -178,11 +178,15 @@ class T53Pipeline:
 
     # ── C5+C3+C4: Execute half ────────────────────────────────────────────────
 
-    def execute_action_request(self, action_request_dict: dict) -> ExecutionResult:
+    def execute_action_request(self, action_request_dict: dict) -> tuple[ExecutionResult, str | None]:
         """C5+C3+C4 — receive ActionRequest from T5.4, run guardrail, dispatch actions.
 
         Looks up the cached CanonicalEvent by event_id. If not found (e.g. cache
         evicted), constructs a minimal placeholder and logs a warning.
+
+        Returns:
+            A tuple of (ExecutionResult, rego_rule) where rego_rule is the
+            NL→Rego translation string when policy_update was present, else None.
         """
         request = ActionRequest(**action_request_dict)
         logger.info(
@@ -218,7 +222,7 @@ class T53Pipeline:
         event: CanonicalEvent,
         profile: SectorProfile,
         c1_ctx: dict | None = None,
-    ) -> ExecutionResult:
+    ) -> tuple[ExecutionResult, str | None]:
         audit_id = self._audit.open_record(
             pilot_id=profile.pilot,
             event_id=event.event_id,
@@ -253,10 +257,9 @@ class T53Pipeline:
                 overall_success=False,
                 timestamp=datetime.now(timezone.utc),
             )
-            rego_rule = None
         elif self._dry_run:
             logger.info("[C5] dry-run — skipping broker dispatch")
-            result, rego_rule = self._dry_run_result(request, event, profile), None
+            result = self._dry_run_result(request, event, profile)
         else:
             result, rego_rule = self._dispatch(request, event, profile)
 
@@ -296,7 +299,7 @@ class T53Pipeline:
             audit_id=audit_id,
         )
 
-        return result
+        return result, rego_rule
 
     def _dispatch(
         self,

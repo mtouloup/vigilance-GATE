@@ -122,12 +122,19 @@ def submit_action_request(body: ActionRequestPayload) -> JSONResponse:
     """
     pipeline = get_pipeline()
     try:
-        result = pipeline.execute_action_request(body.model_dump())
+        result, rego = pipeline.execute_action_request(body.model_dump())
     except Exception as exc:
         logger.error(f"Execution error: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc))
 
+    response_content = result.model_dump(mode="json")
+    if rego and body.policy_update:
+        response_content["policy_translation"] = {
+            "nl_input": body.policy_update,
+            "rego_output": rego,
+        }
+
     return JSONResponse(
         status_code=200 if result.overall_success else 207,
-        content=result.model_dump(mode="json"),
+        content=response_content,
     )
