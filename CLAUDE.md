@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: July 2026 — reflects actual implemented state of the repository. Schemas frozen with T5.4 (GFT); C4 verb catalogue documented; M6 closed.
+> Last updated: July 2026 — reflects actual implemented state of the repository. Schemas frozen with T5.4 (GFT); C4 verb catalogue documented; M6 closed; T5.5 interface question resolved at July 1 KOM (T5.5 is blueprint/scenario collection, not policy enforcement — downstream consumer of `t53.policy_updates` now open).
 
 ---
 
@@ -155,7 +155,7 @@ C4 — Tool Adapter Layer
   │  Per-sector plugin selected by C6 profile
   │  SIEM / IAM / EDR / IDS / Notification plugins
   ▼
-  ├─→ RabbitMQ [topic: t53.policy_updates]    → T5.5 ZTA engine (fire-and-forget)
+  ├─→ RabbitMQ [topic: t53.policy_updates]    → downstream consumer TBD (see Open Items)
   └─→ RabbitMQ [topic: t53.actions.dispatch]  → Pilot tools (fire-and-forget)
 
 C5 — Audit Closure
@@ -165,7 +165,7 @@ RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 ```
 
 **Key properties of this design:**
-- T5.3 returns 202 Accepted immediately after dispatching — never blocks on T5.5 or pilot tool response.
+- T5.3 returns 202 Accepted immediately after dispatching — never blocks on downstream policy consumer or pilot tool response.
 - C1 and ActionRequest consumers run on independent threads (PR #22) to prevent LLM blocking.
 - RabbitMQ heartbeat is disabled (heartbeat=0) to prevent connection reset during LLM calls (PR #18).
 - All C1 parsers emit `pilot="UNKNOWN"` when no sector keywords detected; C6 resolves UNKNOWN at enrichment time.
@@ -183,7 +183,7 @@ One `vigilance-gate` container handles all four sectors simultaneously. Pilot/se
 | `pilot.events.raw` | Inbound | Pilot tools | C1 |
 | `t53.canonical_events` | Outbound | C1 | T5.4 |
 | `t53.action_requests` | Inbound | T5.4 | C5 → C3 → C4 |
-| `t53.policy_updates` | Outbound | C3 | T5.5 ZTA engine (async) |
+| `t53.policy_updates` | Outbound | C3 | downstream consumer TBD (see Open Items) |
 | `t53.actions.dispatch` | Outbound | C4 | Pilot tools (fire-and-forget) |
 | `t53.results` | Outbound | C5 | T5.4, T5.2 |
 
@@ -277,7 +277,7 @@ Produced by T5.4 (GFT). Consumed by T5.3 / C5. Published on `t53.action_requests
 
 **Convention for `policy_update`:**
 - Short, directive natural-language sentence describing the desired ZTA policy change.
-- C3 compiles the NL to OPA/Rego via Mistral Nemo 12B and publishes the result on `t53.policy_updates` for T5.5.
+- C3 compiles the NL to OPA/Rego via Mistral Nemo 12B and publishes the result on `t53.policy_updates`. The downstream consumer of the compiled policy is currently open — T5.5 was previously assumed but ruled out at the July 1 KOM (T5.5 is scoped around blueprint and scenario collection, not policy enforcement).
 - Example tested against the current stack: `"Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"`.
 - Distinct from the `update_zt_policy` action verb — see the C4 Adapter Vocabulary section.
 
@@ -427,7 +427,7 @@ The SCADA adapter **hard-enforces** `mode="safe-state"` on any `isolate_plc` act
 Two distinct mechanisms with confusingly similar names:
 
 - **`update_zt_policy`** is an **action verb** in `ActionRequest.actions`. The SCADA adapter interprets it as "apply IT/OT zero-trust boundary rules to the affected OT zone" and reports back through the ExecutionResult. Siemens-only today.
-- **`policy_update`** is a **top-level schema field** on `ActionRequest`. It carries a natural-language string that C3 compiles to Rego and publishes on `t53.policy_updates` for T5.5's OPA engine. Applies to any pilot.
+- **`policy_update`** is a **top-level schema field** on `ActionRequest`. It carries a natural-language string that C3 compiles to Rego and publishes on `t53.policy_updates`. Applies to any pilot. Downstream consumer is currently open (see Open Items).
 
 Emitting one does not imply the other. T5.4 may emit an `update_zt_policy` action without a `policy_update` (local OT boundary tweak), or a `policy_update` string without `update_zt_policy` (global ZTA policy change), or both.
 
@@ -496,9 +496,12 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 ### Resolved
 
 - [x] **CanonicalEvent / ActionRequest schema agreement (M6)** — frozen with T5.4 (GFT) in July 2026. The seven schemas under `schemas/models/` are the authoritative contract.
+- [x] **T5.5 interface question (July 1 KOM)** — T5.5 (STAM) is scoped around blueprint and scenario collection, not policy enforcement. The `t53.policy_updates → T5.5` connection previously assumed in INNOV's design is retired as a T5.3 interface. What T5.5 actually receives from T5.3 is raw pilot event data for scenario-building (see corresponding active item below).
 
 ### Active gaps
 
+- [ ] **Downstream consumer of `t53.policy_updates` is open.** With T5.5 ruled out, the consumer of the compiled Rego (if any at pilot deployment time) is currently undefined. Candidates: T5.6 (ETRA platform integration) or the pilot infrastructure directly if pilots run their own OPA/equivalent engine. Worth raising with Alejandro (ETRA) in the M7–M9 window.
+- [ ] **Raw pilot event data → T5.5** (July 1 KOM action item) — INNOV commits to obtaining sample event data from OTE and Siemens and forwarding it to STAM for T5.5 blueprint and scenario collection. Emails sent to both pilots. Siemens has replied; awaiting their data. OTE first response still pending.
 - [ ] **C3 target resolution** — `ActionExecutor._build_params()` currently only injects `event_id` and `pilot` into adapter params. Real target values from the CanonicalEvent (`src_ip`, `plc_id`, `subscriber_id`, `cell_id`, etc.) are not yet extracted and forwarded to adapters. Symptom: the OTE SIEM stub's `block_ip` message echoes `event_id` where an IP should appear. Fix scope: M10–M15, alongside the real C4 adapter implementations.
 - [ ] **API key authentication enforcement** — planned M7–M9.
 - [ ] **Audit REST endpoint** — planned M7–M9; will expose `AuditRecord` history.
@@ -508,7 +511,6 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 - [ ] **SME accessibility** — the GA requires "SME-accessible deployment". A concrete operational guide for non-expert deployment is missing.
 - [ ] **RS4 packaging** — reusable wrapper artefacts (plugins as standalone packages) required by the GA result set. Planned for M18 prototype. No packaging design exists yet.
 - [ ] **D5.1 contribution plan** — INNOV's specific contribution sections to D5.1 are not yet formally assigned within the consortium.
-- [ ] **T5.5 interface confirmation** — the `t53.policy_updates → T5.5` connection is an INNOV design choice, not a GA-mandated requirement. Pending confirmation with STAM (T5.5) and GFT that this shape of interface is what T5.5 actually consumes.
 - [ ] **T5.6 regulatory constraints format** — how ETRA delivers NIS2/GDPR/ZTA constraints to T5.3 for C3 policy templates is not yet defined.
 
 ### Stale documentation
@@ -522,7 +524,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 | M3–M4 | ✅ Done | Initial architecture design, component identification |
 | M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
 | M6 | ✅ Done | CanonicalEvent / ActionRequest / GuardrailCheck / ExecutionResult / ActionResult / AuditRecord schemas frozen with T5.4 (GFT); C4 verb catalogue documented for OTE and Siemens; C2/AgentLoop and STANDALONE/DIGITAL_TWIN modes removed (PR #28) |
-| M7–M9 | 🔄 Next | API key auth enforcement; audit REST endpoint; T5.5 interface confirmation; T5.6 regulatory constraints format |
+| M7–M9 | 🔄 Next | API key auth enforcement; audit REST endpoint; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
 | M10–M15 | 🔜 Planned | Real C4 adapter implementations (OTE + Siemens); C3 target resolution from CanonicalEvent; pilot validation data |
 
 ### Risk register items to monitor
