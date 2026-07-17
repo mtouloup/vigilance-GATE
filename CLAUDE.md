@@ -40,41 +40,47 @@
 vigilance-GATE/
 │
 ├── CLAUDE.md                          ← this file (persistent memory)
+├── BLUEPRINT.md                       ← architectural blueprint (design rationale, GA mandate mapping)
 ├── Dockerfile                         ← python:3.11-slim image
 ├── docker-compose.yml                 ← full stack: gate + rabbitmq + ollama + dozzle
 ├── pyproject.toml                     ← package manifest and dependencies
 │
+├── data/                              ← generated output (mounted from container /app/data)
+│   └── workflow_audit.csv             ← one row per pipeline execution (raw → canonical → result)
+│
 ├── vigilance/                         ← main application package
-│   ├── main.py                        ← entrypoint
-│   ├── service.py                     ← service lifecycle
-│   ├── pipeline.py                    ← INTEGRATED mode pipeline orchestration
-│   ├── api/                           ← REST API (POST /api/v1/events → 202)
+│   ├── main.py                        ← entrypoint (REST API + broker consumer)
+│   ├── service.py                     ← service lifecycle / broker consumer
+│   ├── pipeline.py                    ← T53Pipeline — INTEGRATED mode orchestration
+│   ├── workflow_logger.py             ← WorkflowCSVLogger — per-execution audit CSV
+│   ├── api/                           ← REST API (FastAPI, port 8000)
+│   │   └── app.py                     ← POST /api/v1/events, POST /api/v1/action-requests, GET /api/v1/health, GET /api/v1/profiles
 │   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
 │   ├── llm/                           ← LLM abstraction layer
-│   │   ├── base.py                    ← LLMProvider ABC
+│   │   ├── base.py                    ← LLMProvider ABC + StubLLMProvider
 │   │   └── ollama_provider.py         ← OllamaLLMProvider (Mistral 7B + Nemo 12B)
-│   ├── models/                        ← Pydantic v2 data models
+│   ├── models/                        ← Pydantic v2 data models (frozen schema)
 │   │   ├── canonical_event.py
 │   │   ├── action_request.py
 │   │   ├── execution_result.py
 │   │   ├── guardrail_check.py
 │   │   └── audit_record.py
 │   └── components/
-│       ├── c1_ingestion/              ← C1: normalizer + CEF/ECS/syslog/LLM parsers
-│       ├── c3_execution/              ← C3: executor + policy_translator (NL→Rego)
-│       ├── c4_adapters/               ← C4: tool plugins per sector
-│       │   ├── telecom/               ← Splunk, AD, CrowdStrike adapters
-│       │   ├── industry4/             ← Splunk, AD, Suricata adapters
-│       │   ├── maritime/              ← port SIEM, IAM, ops adapters
-│       │   └── finance/               ← banking SIEM, IAM, EDR adapters
-│       ├── c5_safety/                 ← C5: guardrail + audit + simulation
-│       └── c6_profiles/               ← C6: ProfileManager (loads YAML sector profiles)
+│       ├── c1_ingestion/              ← C1: Normalizer + 5 parsers (CEF, ECS, OT JSON, Syslog, LLM)
+│       ├── c3_execution/              ← C3: ActionExecutor + PolicyTranslator (NL→Rego, implemented)
+│       ├── c4_adapters/               ← C4: ToolAdapter ABC + 12 plugins across 4 sectors
+│       │   ├── telecom/               ← ote_siem, ote_iam, ote_ids
+│       │   ├── industry4/             ← scada_opcua, ot_iam, industrial_siem
+│       │   ├── maritime/              ← port_siem, port_iam, port_ops
+│       │   └── finance/               ← bank_siem, bank_iam, fraud_engine
+│       ├── c5_safety/                 ← C5: SafetyGate + AuditLog
+│       └── c6_profiles/               ← C6: ProfileManager + SectorProfile dataclass
 │
 ├── profiles/                          ← sector profile YAMLs
-│   ├── telecom.yaml                   ← OTE / TELECOM
-│   ├── industry4.yaml                 ← Siemens / INDUSTRY_4
+│   ├── telecom.yaml                   ← OTE / TELECOM (confidence_threshold: 0.80)
+│   ├── industry4.yaml                 ← Siemens / INDUSTRY_4 (ot_safety_flag: true)
 │   ├── maritime.yaml                  ← Port of Rotterdam / MARITIME (GA transferability)
-│   └── finance.yaml                   ← CaixaBank / FINANCE (GA transferability)
+│   └── finance.yaml                   ← CaixaBank / FINANCE (confidence_threshold: 0.85)
 │
 ├── schemas/                           ← data model and broker schemas
 │   ├── README.md
@@ -90,6 +96,7 @@ vigilance-GATE/
 │       └── definitions.json           ← pre-declares all durable queues + user
 │
 ├── tests/                             ← test suite (73+ tests)
+│   └── scenarios/                     ← end-to-end scenario tests (A–D, all four pilots)
 └── tools/
     ├── publish_event.sh               ← example producer for pilot partners
     └── simulate_t54.sh                ← T5.4 orchestrator simulator (closes INTEGRATED test loop)
@@ -101,7 +108,7 @@ vigilance-GATE/
 
 ### Mode of operation
 
-**T5.3 operates exclusively in INTEGRATED mode.** STANDALONE and DIGITAL_TWIN modes were removed (PR #28, May 2026). The in-process C2 AgentLoop was also removed at the same time — reasoning is owned by T5.4 (GFT orchestrator) and T5.2 (AEGIS agent repository), not T5.3.
+**T5.3 operates exclusively in INTEGRATED mode.** STANDALONE and DIGITAL_TWIN modes were removed (PR #28, May 2026). The in-process C2 AgentLoop was also removed at the same time — reasoning is owned by T5.4 (GFT) and T5.2 (AEGIS agent repository), not T5.3.
 
 ### Active components (5, not 6)
 
@@ -110,31 +117,32 @@ vigilance-GATE/
 | C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Mistral 7B fallback for unknown formats |
 | C3 | Action & Policy Execution | ✅ Implemented | Conditional — Mistral Nemo 12B for NL→Rego translation |
 | C4 | Tool Adapter Layer | ✅ Implemented | No — deterministic API translation |
-| C5 | Safety, Audit & Simulation | ✅ Implemented | Partial — Mistral 7B semantic check for ESCALATE verdicts |
+| C5 | Safety, Audit & Simulation | ✅ Implemented | Conditional — Mistral 7B semantic check for ESCALATE verdicts |
 | C6 | Sector Profile Manager | ✅ Implemented | Indirect — sets per-sector context at startup |
 | ~~C2~~ | ~~Agentic Interaction Layer~~ | ❌ Removed | Reasoning is T5.4 + T5.2 domain |
 
 ### INTEGRATED mode data flow
 
 ```
-Pilot Tool (CEF / ECS / syslog / JSON alert)
+Pilot Tool (CEF / ECS / OT JSON / syslog / free-text alert)
   │
   ▼
 RabbitMQ  [topic: pilot.events.raw]
   │
   ▼
 C1 — Event Ingestion & Normalization
-  │  Parsers: CEF → ECS → syslog → LLM fallback
-  │  C6 injects sector schema extensions
-  │  pilot=UNKNOWN resolved to VIGILANCE_SECTOR profile
-  │  → CanonicalEvent (UUID event_id always generated by T5.3, never extracted from payload)
+  │  Parser priority: CEF → ECS → OT JSON → Syslog → LLM fallback
+  │  C6 injects sector-specific enrichments (e.g. ot_safety_flag for INDUSTRY_4)
+  │  pilot=UNKNOWN falls back to TELECOM profile with a warning
+  │  → CanonicalEvent (UUID event_id always generated by C1, never extracted from payload)
+  │  → NormalizationMeta (parser_used, llm_invoked, llm_fields) recorded for CSV audit
   ▼
-RabbitMQ  [topic: t53.canonical_events]   ← T5.4 consumes this
+RabbitMQ  [topic: t53.canonical_events]   ← T5.4 consumes
   │
-  │          T5.4 (GFT) orchestrates: agent reasoning → ActionRequest
+  │          T5.4 (GFT): T5.1 RAG context → T5.2 agent selection → ActionRequest
   │
   ▼
-RabbitMQ  [topic: t53.action_requests]    ← T5.3 consumes this
+RabbitMQ  [topic: t53.action_requests]    ← T5.3 consumes
   │
   ▼
 C5 — Safety Gate (pre-execution)
@@ -151,15 +159,18 @@ C3 — Action & Policy Execution
   │  NL→Rego translation if policy_update present (Mistral Nemo 12B)
   │  Dispatches to C4 adapters
   ▼
-C4 — Tool Adapter Layer
-  │  Per-sector plugin selected by C6 profile
-  │  SIEM / IAM / EDR / IDS / Notification plugins
+C3 — Policy Translation (if policy_update present)
+  │  Mistral Nemo 12B + few-shot examples → OPA/Rego rule
+  │  OPA parse validation + single retry on failure
+  │  Falls back to "default deny = true" on double failure (fail-closed)
+  │  → published to t53.policy_updates
   ▼
   ├─→ RabbitMQ [topic: t53.policy_updates]    → downstream consumer TBD (see Open Items)
   └─→ RabbitMQ [topic: t53.actions.dispatch]  → Pilot tools (fire-and-forget)
 
 C5 — Audit Closure
-  │  → ExecutionResult
+  │  AuditLog.close_record() called after dispatch
+  │  WorkflowCSVLogger appends one row to workflow_audit.csv
   ▼
 RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 ```
@@ -168,7 +179,9 @@ RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 - T5.3 returns 202 Accepted immediately after dispatching — never blocks on downstream policy consumer or pilot tool response.
 - C1 and ActionRequest consumers run on independent threads (PR #22) to prevent LLM blocking.
 - RabbitMQ heartbeat is disabled (heartbeat=0) to prevent connection reset during LLM calls (PR #18).
-- All C1 parsers emit `pilot="UNKNOWN"` when no sector keywords detected; C6 resolves UNKNOWN at enrichment time.
+- UNKNOWN pilot falls back to TELECOM profile with a warning log; never hard-fails on unknown sector.
+- Production dispatch (`pipeline._dispatch()`) publishes fire-and-forget to the broker — it does **not** call per-verb C4 adapter routing at runtime. The `ActionExecutor` class (c3_execution/executor.py) implements per-verb routing and is used in tests and direct in-process calls.
+- `data/workflow_audit.csv` is thread-safe (file lock per write) and captures the complete C1 → C5 → C3 → C4 telemetry per event.
 
 ### Multi-pilot runtime
 
@@ -195,13 +208,15 @@ All queues are durable and pre-declared via `infra/rabbitmq/definitions.json` at
 
 | Component | Model | Purpose | Frequency |
 |---|---|---|---|
-| C1 | Mistral 7B | Field extraction from unknown/novel log formats | Low — fallback only |
-| C3 | Mistral Nemo 12B | NL → OPA/Rego policy rule translation | Low — only when `policy_update` present |
-| C5 | Mistral 7B | Semantic guardrail for ESCALATE verdicts | Low — edge cases only |
+| C1 | Mistral 7B | Field extraction from unknown/novel log formats | Low — fallback only when no deterministic parser matches |
+| C3 | Mistral Nemo 12B | NL → OPA/Rego policy rule translation | Low — only when `policy_update` field is set |
+| C5 | Mistral 7B | Semantic guardrail second-opinion for ESCALATE verdicts | Low — borderline cases only |
 
-**C2 (Mistral Nemo 12B reasoning loop) has been removed.** Reasoning is T5.4's responsibility.
+**C2 (reasoning loop) has been removed.** Reasoning is T5.4's responsibility.
 
-**Design rule:** LLMs never call real tools directly. Tool calls are intercepted by T5.3, executed via C4, and results injected back. The LLM operates on canonical representations only.
+**Design rule:** LLMs never call real tools directly. Tool calls are intercepted by T5.3, executed via C4. The LLM operates on canonical representations only.
+
+**Zero LLM calls on the happy path** — known log format, confidence above threshold, no policy update.
 
 ---
 
@@ -376,14 +391,68 @@ Internal T5.3 audit trail, persisted per request. Backs the `workflow_audit.csv`
 
 ---
 
+### AuditRecord
+
+Internal T5.3 audit trail, persisted per request. Backs the REST audit endpoint (planned M7–M9). Not published to the broker.
+
+```json
+{
+  "audit_id":         "string",
+  "pilot_id":         "string",
+  "event_id":         "string",
+  "request_id":       "string",
+  "timestamp_opened": "string   — ISO 8601 UTC",
+  "timestamp_closed": "?string  — ISO 8601 UTC, nullable until closure",
+  "verdict":          "string   — C5 verdict recorded at gate time",
+  "action_results":   [{}],     // list of ActionResult-shaped objects
+  "latencies_ms":     [int],
+  "closed":           "boolean  — defaults to false"
+}
+```
+
+---
+
+## WorkflowCSVLogger
+
+`vigilance/workflow_logger.py` — cross-cutting audit component. Appends one row to `data/workflow_audit.csv` after every completed pipeline execution. Thread-safe (file lock per write). Path controlled by `WORKFLOW_CSV_PATH` env var.
+
+### Columns captured per row
+
+| Column | Description |
+|---|---|
+| `timestamp` | ISO 8601 UTC at row write time |
+| `event_id` | CanonicalEvent UUID |
+| `pilot` | Detected sector |
+| `severity` | Normalized severity |
+| `raw_event` | Original input (JSON-encoded) |
+| `parser_used` | CEF \| ECS \| OT_JSON \| Syslog \| LLM |
+| `c1_llm_invoked` | True when LLM fallback ran in C1 |
+| `c1_llm_fields` | Fields extracted by LLM (JSON, or empty) |
+| `canonical_event` | Full CanonicalEvent JSON |
+| `request_id` | ActionRequest UUID from T5.4 |
+| `actions_requested` | Pipe-separated action verb list |
+| `agent_confidence` | Confidence from T5.4 |
+| `guardrail_verdict` | APPROVED \| REJECTED \| ESCALATE |
+| `guardrail_reasons` | Pipe-separated reason strings |
+| `c5_llm_invoked` | True when Mistral 7B semantic check ran |
+| `c5_llm_response` | Raw LLM JSON response (or empty) |
+| `policy_update_nl` | NL policy input (or empty) |
+| `c3_llm_invoked` | True when Nemo 12B NL→Rego ran |
+| `c3_rego_rule` | Generated Rego string (or empty) |
+| `actions_dispatched` | Pipe-separated dispatched actions |
+| `overall_success` | True if all actions succeeded |
+| `audit_id` | Internal AuditLog record ID |
+
+---
+
 ## Sector Profiles & C4 Plugins
 
-| Profile | Pilot | SIEM | IAM | EDR/IDS | INNOV scope? |
-|---|---|---|---|---|---|
-| `telecom.yaml` | OTE (GR) | Splunk | Active Directory | CrowdStrike EDR | ✅ Yes |
-| `industry4.yaml` | Siemens (RO) | Splunk | Active Directory | Suricata IDS | ✅ Yes |
-| `maritime.yaml` | Port of Rotterdam (NL) | Elastic | Keycloak | Suricata IDS | ❌ No |
-| `finance.yaml` | CaixaBank (ES) | Elastic | Keycloak | SentinelOne EDR | ❌ No |
+| Profile | Pilot | SIEM | IAM | EDR/IDS/Special | Confidence | INNOV scope? |
+|---|---|---|---|---|---|---|
+| `telecom.yaml` | OTE (GR) | Splunk (`ote_siem`) | Active Directory (`ote_iam`) | CrowdStrike (`ote_ids`) | 0.80 | ✅ Yes |
+| `industry4.yaml` | Siemens (RO) | Splunk (`industrial_siem`) | OT IAM (`ot_iam`) | SCADA/OPC-UA (`scada_opcua`) | 0.80 | ✅ Yes |
+| `maritime.yaml` | Port of Rotterdam (NL) | Port SIEM (`port_siem`) | Port IAM (`port_iam`) | Port Ops (`port_ops`) | 0.80 | ❌ No |
+| `finance.yaml` | CaixaBank (ES) | Bank SIEM (`bank_siem`) | Bank IAM (`bank_iam`) | Fraud Engine (`fraud_engine`) | 0.85 | ❌ No |
 
 Maritime and finance profiles exist because the GA mandates transferable wrappers across all four sectors. INNOV validates only TELECOM and INDUSTRY_4.
 
@@ -443,12 +512,14 @@ Adapter sets exist under `c4_adapters/maritime/` and `c4_adapters/finance/` for 
 
 | Variable | Purpose | Example |
 |---|---|---|
-| `VIGILANCE_SECTOR` | Active sector profile for C6 | `TELECOM` or `INDUSTRY_4` |
+| `AMQP_URL` | RabbitMQ AMQP connection string | `amqp://vigilance:vigilance@rabbitmq:5672/` |
 | `OLLAMA_BASE_URL` | Ollama server URL; if unset, StubLLMProvider is used | `http://ollama:11434` |
-| `VIGILANCE_BROKER_URL` | RabbitMQ AMQP connection string | `amqp://vigilance:vigilance@rabbitmq:5672/` |
-| `VIGILANCE_OPA_URL` | OPA policy engine endpoint (C3) | `http://localhost:8181` |
-| `VIGILANCE_DRY_RUN` | Dry-run mode — no real tool calls | `true` / `false` |
-| `VIGILANCE_CONFIDENCE_THRESHOLD` | Minimum agent confidence to proceed | `0.80` |
+| `OLLAMA_MODELS_DIR` | Override to bind-mount host model cache | `~/.ollama` |
+| `VIGILANCE_DRY_RUN` | Dry-run mode — guardrail runs, broker dispatch skipped | `true` / `false` |
+| `WORKFLOW_CSV_PATH` | Path for workflow audit CSV output | `/app/data/workflow_audit.csv` |
+| `API_HOST` | REST API bind address | `0.0.0.0` |
+| `API_PORT` | REST API port | `8000` |
+| `VIGILANCE_CONFIDENCE_THRESHOLD` | Override default confidence threshold (profile value takes precedence) | `0.80` |
 | `VIGILANCE_PROTECTED_RANGES` | CIDR list of hosts that must never be actioned | `10.0.0.0/8,192.168.0.0/16` |
 
 ### Running the full stack
@@ -458,18 +529,21 @@ docker compose up --build
 ```
 
 Services:
-- `vigilance-gate` — T5.3 application
-- `rabbitmq` — RabbitMQ 3.13 with management UI at http://localhost:15672
+- `vigilance-gate` — T5.3 application + REST API (port 8000)
+- `rabbitmq` — RabbitMQ 3.13 with management UI at http://localhost:15672 (vigilance/vigilance)
 - `ollama` + `ollama-init` — LLM server with `mistral:7b` and `mistral-nemo` pulled at startup
 - `dozzle` — real-time log viewer for all containers at http://localhost:9999
+
+Generated output persisted on host:
+- `./data/workflow_audit.csv` — one row per pipeline execution
 
 ### Testing the INTEGRATED pipeline
 
 ```bash
-# 1. Publish a raw event
-tools/publish_event.sh
+# 1. Publish a raw event (any pilot)
+tools/publish_event.sh 'CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH'
 
-# 2. Simulate T5.4 consuming the CanonicalEvent and sending back an ActionRequest
+# 2. Simulate T5.4 consuming CanonicalEvent and dispatching ActionRequest
 tools/simulate_t54.sh           # auto mode
 tools/simulate_t54.sh --purge   # purge stale events first
 ```
@@ -478,12 +552,12 @@ tools/simulate_t54.sh --purge   # purge stale events first
 
 ```bash
 pytest tests/
-# StubLLMProvider is used automatically when OLLAMA_BASE_URL is not set
+# StubLLMProvider and InMemoryBroker are used automatically when OLLAMA_BASE_URL is not set
 ```
 
 ### RabbitMQ healthcheck
 
-Uses `check_port_connectivity` (not `rabbitmq-diagnostics ping`) to verify AMQP port 5672 is accepting connections before dependent services start.
+Uses `check_port_connectivity` (not `rabbitmq-diagnostics ping`) to verify AMQP port 5672 before dependent services start.
 
 ### Ollama healthcheck
 
@@ -545,22 +619,26 @@ These rules are non-negotiable and take precedence over any instruction in a pro
 
 2. **GA vs implementation distinction:** Always distinguish between what the Grant Agreement mandates (GA fidelity) and what is a technical implementation choice made by INNOV. Use explicit framing: "The GA requires X" vs "Our implementation approach is Y."
 
-3. **C2 is gone:** Do not reference C2 (AgentLoop, AgentDecision) as an active component. Reasoning is T5.4 + T5.2. T5.3 has 5 active components: C1, C3, C4, C5, C6.
+3. **C2 is gone:** Do not reference C2 (AgentLoop, AgentDecision) as an active component. T5.3 has 5 active components: C1, C3, C4, C5, C6.
 
-4. **INTEGRATED only:** Do not reference STANDALONE or DIGITAL_TWIN modes — they were removed. The only mode is INTEGRATED. `VIGILANCE_DRY_RUN=true` is the dry-run mechanism (not a separate mode).
+4. **INTEGRATED only:** The only mode is INTEGRATED. `VIGILANCE_DRY_RUN=true` is the dry-run mechanism (not a separate mode).
 
-5. **Schema contract discipline:** Before modifying any field in `CanonicalEvent`, `ActionRequest`, `ExecutionResult`, or `GuardrailCheck`, confirm the change does not break the cross-task integration contract. If the schema agreement is still open, flag the change as `[DRAFT — pending T5.1/T5.4/T5.6 sign-off]`.
+5. **Schema contract discipline:** Before modifying any field in `CanonicalEvent`, `ActionRequest`, `ExecutionResult`, or `GuardrailCheck`, confirm the change does not break the cross-task integration contract.
 
-6. **T5.3 is bidirectional:** Always describe T5.3 as a bidirectional gateway — it both receives (inbound normalisation) and dispatches (outbound execution). Do not describe it as a one-directional processor.
+6. **T5.3 is bidirectional:** Always describe T5.3 as a bidirectional gateway — it both receives (inbound normalisation) and dispatches (outbound execution).
 
 7. **LLMs do not call real tools:** The LLM emits tool call descriptors; T5.3 intercepts and executes via C4. Never describe the LLM as directly invoking APIs.
 
-8. **Keep this file current:** Update `CLAUDE.md` whenever any of the following occur:
-   - A schema field is added, removed, or renamed
-   - A new component or plugin is introduced or removed
-   - A milestone is completed or re-scoped
-   - A cross-task integration blocker is resolved
-   - Deployment model changes (models, serving infrastructure, broker topics)
-   - The GitHub repo `mtouloup/vigilance-GATE` receives significant commits
+8. **C3 PolicyTranslator is implemented:** Do not describe it as a stub or placeholder. It has real few-shot prompting, OPA parse validation, and retry logic.
 
-9. **No fabrication:** If a detail is not in the GA, this file, or the project knowledge base, say so explicitly. Do not invent pilot details, tool names, or schema fields.
+9. **Dispatch mechanism:** In the production pipeline path, `pipeline._dispatch()` publishes fire-and-forget to the broker — it does not call individual C4 adapter methods. `ActionExecutor` handles per-verb routing in direct/test contexts.
+
+10. **Keep this file current:** Update `CLAUDE.md` whenever any of the following occur:
+    - A schema field is added, removed, or renamed
+    - A new component or plugin is introduced or removed
+    - A milestone is completed or re-scoped
+    - A cross-task integration blocker is resolved
+    - Deployment model or broker topics change
+    - The GitHub repo `mtouloup/vigilance-GATE` receives significant commits
+
+11. **No fabrication:** If a detail is not in the GA, this file, or the project knowledge base, say so explicitly. Do not invent pilot details, tool names, or schema fields.
