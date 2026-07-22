@@ -88,6 +88,8 @@ C3 has two sub-responsibilities. First, it translates natural-language policy up
 
 C4 is a plugin system. Each adapter wraps one pilot tool (SIEM, IAM, EDR/IDS, SCADA, fraud engine) and declares the exact action verbs it handles. Adapters are pure Python classes implementing the `ToolAdapter` ABC — they do not perform LLM inference, they do not parse events, and they do not make safety decisions. In the current implementation all adapters return stub responses; real tool connections are planned for M10–M15 for the INNOV-scoped pilots (OTE, Siemens).
 
+The `create_incident` verb is implemented in the OTE SIEM (`ote_siem`) and Siemens industrial SIEM (`industrial_siem`) adapters. It is not present in maritime or finance adapters.
+
 In the production pipeline, actions are dispatched fire-and-forget to the `t53.actions.dispatch` broker topic. The per-verb `ActionExecutor` routing is available for direct in-process calls and testing.
 
 ### C5 — Safety Gate and Audit

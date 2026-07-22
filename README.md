@@ -155,7 +155,7 @@ vigilance-GATE/
 │   └── rabbitmq/
 │       ├── rabbitmq.conf       Loads definitions at broker startup
 │       └── definitions.json    Pre-declares all queues, user, and permissions
-├── tests/
+├── tests/                      115 tests across 10 files
 │   ├── test_c1_ingestion.py … test_c6_profiles.py
 │   └── scenarios/
 │       ├── test_scenario_a_ote.py          Full OTE end-to-end
@@ -622,11 +622,11 @@ All 12 adapters are stubs in the current implementation; real connections to pil
 
 | `plugin_name` | Wrapped tool | `supported_actions` |
 |---|---|---|
-| `ote_siem` | Splunk | `block_ip`, `query_logs` |
+| `ote_siem` | Splunk | `block_ip`, `query_logs`, `create_incident` |
 | `ote_iam` | Active Directory | `revoke_session`, `query_sessions` |
 | `ote_ids` | CrowdStrike | `notify_soc` |
 
-**Verb union:** `block_ip`, `query_logs`, `revoke_session`, `query_sessions`, `notify_soc`
+**Verb union:** `block_ip`, `query_logs`, `create_incident`, `revoke_session`, `query_sessions`, `notify_soc`
 
 ### Siemens (Industry 4.0)
 
@@ -634,9 +634,9 @@ All 12 adapters are stubs in the current implementation; real connections to pil
 |---|---|---|
 | `scada_opcua` | OPC-UA SCADA | `isolate_plc`, `notify_soc`, `update_zt_policy` |
 | `ot_iam` | OT IAM | `revoke_ot_session`, `query_sessions` |
-| `industrial_siem` | Splunk | `query_logs`, `block_ip` |
+| `industrial_siem` | Splunk | `query_logs`, `block_ip`, `create_incident` |
 
-**Verb union:** `isolate_plc`, `notify_soc`, `update_zt_policy`, `revoke_ot_session`, `query_sessions`, `query_logs`, `block_ip`
+**Verb union:** `isolate_plc`, `notify_soc`, `update_zt_policy`, `revoke_ot_session`, `query_sessions`, `query_logs`, `block_ip`, `create_incident`
 
 ### Port of Rotterdam (Maritime)
 
@@ -686,7 +686,7 @@ Package naming convention: `vigilance.<pilot_lower>.<domain>` — e.g. `vigilanc
 ### Offline / Test Mode
 
 When `OLLAMA_BASE_URL` is not set, `StubLLMProvider` is used automatically — deterministic
-responses, no model required. All 73+ tests pass offline with the stub.
+responses, no model required. All 115 tests pass offline with the stub.
 
 ---
 
