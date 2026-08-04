@@ -108,6 +108,7 @@ def submit_event(body: RawEventRequest) -> JSONResponse:
             "pilot": event.pilot,
             "type": event.type,
             "severity": event.severity,
+            "canonical_event": event.model_dump(mode="json"),
         },
     )
 
