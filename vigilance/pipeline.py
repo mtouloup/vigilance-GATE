@@ -36,8 +36,7 @@ TOPIC_RESULTS          = "t53.results"
 TOPIC_POLICY_UPDATES   = "t53.policy_updates"   # consumed by T5.5 for ZTA blueprint refinement
 TOPIC_ACTIONS_DISPATCH = "t53.actions.dispatch"  # consumed by pilot tools (fire-and-forget)
 
-_UNKNOWN_PILOT  = "UNKNOWN"
-_FALLBACK_SECTOR = "TELECOM"
+_SUPPORTED_PILOTS = {"TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"}
 
 
 def _build_telecom_adapters() -> dict[str, ToolAdapter]:
@@ -137,15 +136,15 @@ class T53Pipeline:
     def _profile_for(self, pilot: str) -> SectorProfile:
         profile = self._profiles.get(pilot)
         if profile is None:
-            logger.warning(
-                f"Pilot '{pilot}' has no registered profile — "
-                f"falling back to {_FALLBACK_SECTOR}."
+            supported = sorted(self._profiles.keys())
+            raise ValueError(
+                f"Pilot '{pilot}' is not supported. "
+                f"Supported pilots: {supported}"
             )
-            profile = self._profiles[_FALLBACK_SECTOR]
         return profile
 
     def _adapters_for(self, sector: str) -> dict[str, ToolAdapter]:
-        return self._all_adapters.get(sector, self._all_adapters[_FALLBACK_SECTOR])
+        return self._all_adapters[sector]
 
     # ── C1: Ingest half ───────────────────────────────────────────────────────
 
@@ -159,6 +158,14 @@ class T53Pipeline:
         logger.info("[C1] Normalizing event...")
         meta = self._normalizer.normalize_with_meta(raw_event)
         event = meta.event
+
+        if event.pilot == "UNKNOWN":
+            supported = sorted(self._profiles.keys())
+            raise ValueError(
+                f"Could not detect pilot from raw event (parser: {meta.parser_used}). "
+                f"Ensure the event contains recognisable sector identifiers. "
+                f"Supported pilots: {supported}"
+            )
 
         profile = self._profile_for(event.pilot)
         event = self._normalizer._enrich_with_profile(event, profile)
