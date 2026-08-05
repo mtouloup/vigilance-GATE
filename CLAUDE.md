@@ -95,7 +95,7 @@ vigilance-GATE/
 │       ├── rabbitmq.conf              ← loads definitions at startup
 │       └── definitions.json           ← pre-declares all durable queues + user
 │
-├── tests/                             ← test suite (73+ tests)
+├── tests/                             ← test suite (115 tests across 10 files)
 │   └── scenarios/                     ← end-to-end scenario tests (A–D, all four pilots)
 └── tools/
     ├── publish_event.sh               ← example producer for pilot partners
@@ -181,6 +181,7 @@ RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 - RabbitMQ heartbeat is disabled (heartbeat=0) to prevent connection reset during LLM calls (PR #18).
 - UNKNOWN pilot falls back to TELECOM profile with a warning log; never hard-fails on unknown sector.
 - Production dispatch (`pipeline._dispatch()`) publishes fire-and-forget to the broker — it does **not** call per-verb C4 adapter routing at runtime. The `ActionExecutor` class (c3_execution/executor.py) implements per-verb routing and is used in tests and direct in-process calls.
+- `execute_action_request()` returns `tuple[ExecutionResult, str | None]` — the second element is the generated Rego rule string when `policy_update` was present, otherwise `None`. The REST API unwraps this tuple and includes `policy_translation` in the response body.
 - `data/workflow_audit.csv` is thread-safe (file lock per write) and captures the complete C1 → C5 → C3 → C4 telemetry per event.
 
 ### Multi-pilot runtime
@@ -466,11 +467,11 @@ Each C4 adapter is a Python plugin wrapping one pilot tool. Adapters declare the
 
 | Adapter file | `plugin_name` | Wrapped tool | `supported_actions` |
 |---|---|---|---|
-| `telecom/siem_plugin.py` | `ote_siem` | Splunk | `block_ip`, `query_logs` |
+| `telecom/siem_plugin.py` | `ote_siem` | Splunk | `block_ip`, `query_logs`, `create_incident` |
 | `telecom/iam_plugin.py` | `ote_iam` | Active Directory | `revoke_session`, `query_sessions` |
 | `telecom/ids_plugin.py` | `ote_ids` | CrowdStrike | `notify_soc` |
 
-**OTE verb union:** `block_ip`, `query_logs`, `revoke_session`, `query_sessions`, `notify_soc`
+**OTE verb union:** `block_ip`, `query_logs`, `create_incident`, `revoke_session`, `query_sessions`, `notify_soc`
 
 ### Siemens (Industry 4.0)
 
@@ -478,14 +479,19 @@ Each C4 adapter is a Python plugin wrapping one pilot tool. Adapters declare the
 |---|---|---|---|
 | `industry4/scada_plugin.py` | `scada_opcua` | OPC-UA SCADA endpoint | `isolate_plc`, `notify_soc`, `update_zt_policy` |
 | `industry4/iam_plugin.py` | `ot_iam` | OT IAM | `revoke_ot_session`, `query_sessions` |
-| `industry4/siem_plugin.py` | `industrial_siem` | Splunk (industrial) | `query_logs`, `block_ip` |
+| `industry4/siem_plugin.py` | `industrial_siem` | Splunk (industrial) | `query_logs`, `block_ip`, `create_incident` |
 
-**Siemens verb union:** `isolate_plc`, `notify_soc`, `update_zt_policy`, `revoke_ot_session`, `query_sessions`, `query_logs`, `block_ip`
+**Siemens verb union:** `isolate_plc`, `notify_soc`, `update_zt_policy`, `revoke_ot_session`, `query_sessions`, `query_logs`, `block_ip`, `create_incident`
 
 ### Cross-pilot and sector-scoped verbs
 
-- **Cross-pilot** (identical semantics in both sectors): `block_ip`, `notify_soc`, `query_logs`, `query_sessions`. T5.4 can emit these without knowing the sector.
-- **Sector-scoped variants** are deliberate — not aliases. OTE's `revoke_session` targets an IT session (AD-backed); Siemens' `revoke_ot_session` targets OT session credentials for PLC zone access. Different underlying revocations, different safety implications. T5.4 should treat them as distinct options.
+- **Cross-pilot** (shared semantics): `query_logs`, `notify_soc`, `query_sessions`. T5.4 can emit these safely for any pilot.
+- **`create_incident`** is supported by `ote_siem` and `industrial_siem` only — not maritime or finance adapters.
+- **Sector-scoped variants** are deliberate — not aliases:
+  - OTE `revoke_session` = IT session (AD-backed)
+  - Siemens `revoke_ot_session` = OT session credentials for PLC zone access
+  - Finance `revoke_session` = customer/employee token invalidation (Keycloak)
+- `update_vessel_acl` appears in both `port_siem` and `port_ops` — either adapter can handle it; the first match wins in direct routing.
 
 ### `isolate_plc` safety constraint
 
