@@ -26,7 +26,7 @@ from vigilance.llm import create_llm
 from vigilance.models.action_request import ActionRequest
 from vigilance.models.canonical_event import CanonicalEvent
 from vigilance.models.execution_result import ActionResult, ExecutionResult
-from vigilance.models.guardrail_check import GuardrailVerdict
+from vigilance.models.guardrail_check import GuardrailCheck, GuardrailVerdict
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,9 @@ class T53Pipeline:
 
         # Event cache: event_id → {event, raw_event, parser_used, c1_llm_invoked, c1_llm_fields}
         self._event_cache: dict[str, dict] = {}
+
+        # Action request cache: request_id → raw dict (for decoupled guardrail checks)
+        self._action_request_cache: dict[str, dict] = {}
 
         # Workflow audit CSV
         self._csv_logger = WorkflowCSVLogger()
@@ -213,6 +216,52 @@ class T53Pipeline:
 
         profile = self._profile_for(event.pilot)
         return self._guardrail_and_execute(request, event, profile, c1_ctx)
+
+    # ── Decoupled guardrail API ───────────────────────────────────────────────
+
+    def store_action_request(self, action_request_dict: dict) -> str:
+        """Validate and cache an ActionRequest without executing it.
+
+        Returns the request_id so the caller can later invoke run_guardrail()
+        or execute_action_request() independently.
+        """
+        request = ActionRequest(**action_request_dict)
+        self._action_request_cache[request.request_id] = action_request_dict
+        logger.info(f"[C5] ActionRequest stored (pending): request_id={request.request_id}")
+        return request.request_id
+
+    def run_guardrail(self, request_id: str) -> GuardrailCheck:
+        """Run C5 guardrail on a previously stored ActionRequest.
+
+        Does NOT open an audit record, does NOT dispatch to C3/C4.
+        Returns the raw GuardrailCheck verdict so the caller can decide
+        whether to proceed to execute_action_request().
+        """
+        action_request_dict = self._action_request_cache.get(request_id)
+        if action_request_dict is None:
+            raise KeyError(f"ActionRequest {request_id!r} not found — submit it first via /action-requests/submit")
+
+        request = ActionRequest(**action_request_dict)
+        cached = self._event_cache.get(request.event_id)
+        if cached is None:
+            logger.warning(f"[C5] event_id={request.event_id} not in cache — using placeholder for guardrail check")
+            event = CanonicalEvent(
+                event_id=request.event_id,
+                type="UNKNOWN",
+                pilot=request.pilot,
+                severity="HIGH",
+                timestamp=datetime.now(timezone.utc),
+            )
+        else:
+            event = cached["event"]
+
+        profile = self._profile_for(event.pilot)
+        guardrail = self._guardrail.check(request, event, profile, self._llm)
+        logger.info(
+            f"[C5] Guardrail-only check: request_id={request_id} "
+            f"verdict={guardrail.verdict.value} reasons={guardrail.reasons}"
+        )
+        return guardrail
 
     # ── Guardrail + dispatch ───────────────────────────────────────────────────
 

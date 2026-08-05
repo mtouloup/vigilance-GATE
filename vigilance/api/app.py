@@ -208,6 +208,50 @@ def submit_event(body: RawEventRequest) -> JSONResponse:
     )
 
 
+@app.post("/api/v1/action-requests/submit", tags=["Execution"])
+def store_action_request(body: ActionRequestPayload) -> JSONResponse:
+    """Receive and store an ActionRequest without running the pipeline.
+
+    Use this when you want to control execution timing manually.
+    After storing, call POST /api/v1/action-requests/{request_id}/guardrail
+    to run the C5 safety check, then POST /api/v1/action-requests to execute
+    the full pipeline when ready.
+    """
+    pipeline = get_pipeline()
+    try:
+        request_id = pipeline.store_action_request(body.model_dump())
+    except Exception as exc:
+        logger.error(f"Store error: {exc}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(exc))
+    return JSONResponse(
+        status_code=202,
+        content={
+            "message": "ActionRequest stored — call /guardrail to run the C5 safety check.",
+            "request_id": request_id,
+            "status": "pending",
+        },
+    )
+
+
+@app.post("/api/v1/action-requests/{request_id}/guardrail", tags=["Execution"])
+def check_guardrail(request_id: str) -> JSONResponse:
+    """Run the C5 guardrail check on a stored ActionRequest.
+
+    Returns the GuardrailCheck verdict (APPROVED / REJECTED / ESCALATE)
+    and the reasons for each outcome. Does not dispatch to C3 or C4 —
+    use POST /api/v1/action-requests for the full execution pipeline.
+    """
+    pipeline = get_pipeline()
+    try:
+        guardrail = pipeline.run_guardrail(request_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Guardrail error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+    return JSONResponse(status_code=200, content=guardrail.model_dump(mode="json"))
+
+
 @app.post("/api/v1/action-requests", tags=["Execution"])
 def submit_action_request(body: ActionRequestPayload) -> JSONResponse:
     """Submit an ActionRequest for C5 guardrail + C3+C4 dispatch.
