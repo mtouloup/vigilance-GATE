@@ -85,6 +85,101 @@ def list_profiles() -> dict:
     }
 
 
+@app.get("/api/v1/formats", tags=["Events"])
+def list_formats() -> dict:
+    """Return the log formats C1 can parse and which pilots each format applies to.
+
+    Formats are tried in priority order. The LLM fallback is always last and
+    accepts any input type, but requires Ollama to be reachable.
+    """
+    return {
+        "parser_priority": ["CEF", "ECS", "OT_JSON", "Syslog", "LLM"],
+        "formats": [
+            {
+                "name": "CEF",
+                "full_name": "Common Event Format",
+                "priority": 1,
+                "input_type": "string",
+                "detection": "String starting with 'CEF:'",
+                "pilots": ["TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"],
+                "pilot_detection": "Inferred from device_product field keywords",
+                "example": (
+                    "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|"
+                    "src=91.108.4.12 dst=nms-01 cnt=230"
+                ),
+            },
+            {
+                "name": "ECS",
+                "full_name": "Elastic Common Schema",
+                "priority": 2,
+                "input_type": "dict",
+                "detection": "Dict containing key 'event.kind'",
+                "pilots": ["TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"],
+                "pilot_detection": "Inferred from agent.type or observer.type keywords",
+                "example": {
+                    "event.kind": "alert",
+                    "event.category": "authentication",
+                    "event.action": "brute_force",
+                    "event.severity": "high",
+                    "agent.type": "ote-soc",
+                    "source.ip": "91.108.4.12",
+                },
+            },
+            {
+                "name": "OT_JSON",
+                "full_name": "OT JSON (Siemens Industry 4.0)",
+                "priority": 3,
+                "input_type": "dict",
+                "detection": "Dict containing key 'plc' or 'protocol'",
+                "pilots": ["INDUSTRY_4"],
+                "pilot_detection": "Always INDUSTRY_4 — format is OT-specific",
+                "example": {
+                    "plc": "PLC-42",
+                    "line": "line-7",
+                    "protocol": "OPC-UA",
+                    "anomaly": "register_write_out_of_range",
+                    "severity": "CRITICAL",
+                },
+            },
+            {
+                "name": "Syslog",
+                "full_name": "Syslog (RFC 3164 / RFC 5424)",
+                "priority": 4,
+                "input_type": "string",
+                "detection": "String matching RFC 3164 or RFC 5424 pattern (<priority>...)",
+                "pilots": ["TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"],
+                "pilot_detection": (
+                    "Pilot is UNKNOWN from syslog alone — falls back to TELECOM profile. "
+                    "Use CEF or ECS for explicit pilot identification."
+                ),
+                "example": (
+                    "<34>Oct 11 22:14:15 firewall-01 sshd: "
+                    "Failed password for root from 91.108.4.12 port 22"
+                ),
+            },
+            {
+                "name": "LLM",
+                "full_name": "LLM Fallback (Mistral 7B)",
+                "priority": 5,
+                "input_type": "string or dict",
+                "detection": "Any input that does not match CEF, ECS, OT_JSON, or Syslog",
+                "pilots": ["TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"],
+                "pilot_detection": "Extracted by LLM from free-text content",
+                "requires_ollama": True,
+                "note": (
+                    "Used as a last resort for novel or proprietary formats. "
+                    "Requires Ollama (mistral:7b) to be reachable. "
+                    "When Ollama is unavailable, StubLLMProvider returns a minimal event."
+                ),
+                "example": (
+                    "ALERT: Anomalous login detected for subscriber IMSI-204041234567890 "
+                    "from cell tower CELL-Athens-NW-014 at 03:42 UTC"
+                ),
+            },
+        ],
+    }
+
+
 @app.post("/api/v1/events", tags=["Events"])
 def submit_event(body: RawEventRequest) -> JSONResponse:
     """Submit a raw security event for C1 normalization.
