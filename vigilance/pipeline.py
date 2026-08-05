@@ -15,6 +15,7 @@ import logging
 from datetime import datetime, timezone
 
 from vigilance.broker import BaseBroker, create_broker
+from vigilance.db import Database
 from vigilance.components.c1_ingestion.normalizer import Normalizer
 from vigilance.components.c3_execution.policy_translator import PolicyTranslator
 from vigilance.workflow_logger import WorkflowCSVLogger
@@ -132,6 +133,9 @@ class T53Pipeline:
         # Broker
         self._broker = create_broker()
 
+        # SQLite persistence
+        self._db = Database()
+
         logger.info(f"[T53Pipeline] Initialized: pilots={list(self._profiles.keys())} dry_run={dry_run}")
 
     # ── Profile + adapter lookup ───────────────────────────────────────────────
@@ -178,6 +182,7 @@ class T53Pipeline:
             f"severity={event.severity} pilot={event.pilot}"
         )
 
+        event_dict = event.model_dump(mode="json")
         self._event_cache[event.event_id] = {
             "event":          event,
             "raw_event":      raw_event,
@@ -185,7 +190,14 @@ class T53Pipeline:
             "c1_llm_invoked": meta.llm_invoked,
             "c1_llm_fields":  meta.llm_fields,
         }
-        self._broker.publish(TOPIC_CANONICAL_EVENTS, event.model_dump(mode="json"))
+        self._db.upsert_event(
+            canonical_event=event_dict,
+            raw_event=raw_event,
+            parser_used=meta.parser_used,
+            c1_llm_invoked=meta.llm_invoked,
+            c1_llm_fields=meta.llm_fields,
+        )
+        self._broker.publish(TOPIC_CANONICAL_EVENTS, event_dict)
         logger.info(f"[C1] CanonicalEvent → {TOPIC_CANONICAL_EVENTS} (awaiting T5.4 ActionRequest)")
         return event
 
@@ -237,6 +249,7 @@ class T53Pipeline:
         """
         request = ActionRequest(**action_request_dict)
         self._action_request_cache[request.request_id] = action_request_dict
+        self._db.upsert_action_request(action_request_dict)
         logger.info(f"[C5] ActionRequest stored (pending): request_id={request.request_id}")
         return request.request_id
 
@@ -247,7 +260,10 @@ class T53Pipeline:
         Returns the raw GuardrailCheck verdict so the caller can decide
         whether to proceed to execute_action_request().
         """
-        action_request_dict = self._action_request_cache.get(request_id)
+        action_request_dict = (
+            self._action_request_cache.get(request_id)
+            or self._db.get_action_request(request_id)
+        )
         if action_request_dict is None:
             raise KeyError(f"ActionRequest {request_id!r} not found — submit it first via /action-requests/submit")
 
@@ -275,20 +291,28 @@ class T53Pipeline:
 
     # ── Result and audit accessors ────────────────────────────────────────────
 
-    def get_result(self, request_id: str) -> tuple[ExecutionResult, str | None] | None:
-        """Return the cached (ExecutionResult, rego_rule) for a completed request, or None."""
-        return self._result_cache.get(request_id)
+    def get_result(self, request_id: str) -> dict | None:
+        """Return the ExecutionResult dict for a completed request, or None.
 
-    def get_audit_records(self, pilot: str | None = None):
-        """Return all audit records, optionally filtered by pilot."""
-        records = self._audit.get_all()
-        if pilot:
-            records = [r for r in records if r.pilot_id == pilot]
-        return records
+        Tries in-memory cache first; falls back to SQLite so results
+        survive container restarts.
+        """
+        cached = self._result_cache.get(request_id)
+        if cached is not None:
+            result, rego = cached
+            d = result.model_dump(mode="json")
+            if rego:
+                d["rego_rule"] = rego
+            return d
+        return self._db.get_result(request_id)
 
-    def get_audit_record(self, audit_id: str):
-        """Return a single audit record by ID, or None."""
-        return self._audit.get_by_id(audit_id)
+    def get_audit_records(self, pilot: str | None = None) -> list[dict]:
+        """Return all audit records from SQLite, optionally filtered by pilot."""
+        return self._db.list_audit_records(pilot=pilot)
+
+    def get_audit_record(self, audit_id: str) -> dict | None:
+        """Return a single audit record by ID from SQLite, or None."""
+        return self._db.get_audit_record(audit_id)
 
     # ── Guardrail + dispatch ───────────────────────────────────────────────────
 
@@ -348,7 +372,12 @@ class T53Pipeline:
         logger.info(f"[C5] Audit record closed: {audit_id}")
 
         self._result_cache[request.request_id] = (result, rego_rule)
-        self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
+        result_dict = result.model_dump(mode="json")
+        self._db.upsert_result(result_dict, rego_rule)
+        self._db.upsert_audit_record(
+            self._audit.get_by_id(audit_id).model_dump(mode="json")
+        )
+        self._broker.publish(TOPIC_RESULTS, result_dict)
 
         # ── Workflow audit CSV ────────────────────────────────────────────────
         ctx = c1_ctx or {}

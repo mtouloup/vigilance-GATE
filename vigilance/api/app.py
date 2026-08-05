@@ -216,15 +216,15 @@ def get_result(request_id: str) -> JSONResponse:
     and the generated Rego rule if a policy_update was present.
     """
     pipeline = get_pipeline()
-    entry = pipeline.get_result(request_id)
-    if entry is None:
+    result = pipeline.get_result(request_id)
+    if result is None:
         raise HTTPException(
             status_code=404,
             detail=f"No result found for request_id '{request_id}'. "
                    "The request may not have been executed yet.",
         )
-    result, rego = entry
-    content = result.model_dump(mode="json")
+    content = dict(result)
+    rego = content.pop("rego_rule", None)
     if rego:
         content["policy_translation"] = {"rego_output": rego}
     return JSONResponse(status_code=200, content=content)
@@ -242,10 +242,7 @@ def list_audit_records(pilot: str | None = None) -> JSONResponse:
     records = pipeline.get_audit_records(pilot=pilot)
     return JSONResponse(
         status_code=200,
-        content={
-            "total": len(records),
-            "records": [r.model_dump(mode="json") for r in records],
-        },
+        content={"total": len(records), "records": records},
     )
 
 
@@ -259,7 +256,7 @@ def get_audit_record(audit_id: str) -> JSONResponse:
             status_code=404,
             detail=f"Audit record '{audit_id}' not found.",
         )
-    return JSONResponse(status_code=200, content=record.model_dump(mode="json"))
+    return JSONResponse(status_code=200, content=record)
 
 
 @app.post("/api/v1/action-requests/submit", tags=["Execution"])
