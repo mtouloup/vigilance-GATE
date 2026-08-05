@@ -119,6 +119,9 @@ class T53Pipeline:
         # Action request cache: request_id → raw dict (for decoupled guardrail checks)
         self._action_request_cache: dict[str, dict] = {}
 
+        # Result cache: request_id → (ExecutionResult, rego_rule | None)
+        self._result_cache: dict[str, tuple[ExecutionResult, str | None]] = {}
+
         # Workflow audit CSV
         self._csv_logger = WorkflowCSVLogger()
 
@@ -270,6 +273,23 @@ class T53Pipeline:
         )
         return guardrail
 
+    # ── Result and audit accessors ────────────────────────────────────────────
+
+    def get_result(self, request_id: str) -> tuple[ExecutionResult, str | None] | None:
+        """Return the cached (ExecutionResult, rego_rule) for a completed request, or None."""
+        return self._result_cache.get(request_id)
+
+    def get_audit_records(self, pilot: str | None = None):
+        """Return all audit records, optionally filtered by pilot."""
+        records = self._audit.get_all()
+        if pilot:
+            records = [r for r in records if r.pilot_id == pilot]
+        return records
+
+    def get_audit_record(self, audit_id: str):
+        """Return a single audit record by ID, or None."""
+        return self._audit.get_by_id(audit_id)
+
     # ── Guardrail + dispatch ───────────────────────────────────────────────────
 
     def _guardrail_and_execute(
@@ -327,6 +347,7 @@ class T53Pipeline:
         self._audit.close_record(audit_id, result, guardrail)
         logger.info(f"[C5] Audit record closed: {audit_id}")
 
+        self._result_cache[request.request_id] = (result, rego_rule)
         self._broker.publish(TOPIC_RESULTS, result.model_dump(mode="json"))
 
         # ── Workflow audit CSV ────────────────────────────────────────────────

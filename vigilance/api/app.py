@@ -208,6 +208,60 @@ def submit_event(body: RawEventRequest) -> JSONResponse:
     )
 
 
+@app.get("/api/v1/results/{request_id}", tags=["Results"])
+def get_result(request_id: str) -> JSONResponse:
+    """Retrieve the ExecutionResult for a completed ActionRequest.
+
+    Returns the full result including action outcomes, overall success,
+    and the generated Rego rule if a policy_update was present.
+    """
+    pipeline = get_pipeline()
+    entry = pipeline.get_result(request_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No result found for request_id '{request_id}'. "
+                   "The request may not have been executed yet.",
+        )
+    result, rego = entry
+    content = result.model_dump(mode="json")
+    if rego:
+        content["policy_translation"] = {"rego_output": rego}
+    return JSONResponse(status_code=200, content=content)
+
+
+@app.get("/api/v1/audit", tags=["Audit"])
+def list_audit_records(pilot: str | None = None) -> JSONResponse:
+    """List all audit records, optionally filtered by pilot.
+
+    Query param: ?pilot=INDUSTRY_4
+    Each record covers one ActionRequest lifecycle from C5 gate entry
+    to dispatch closure, including verdict, action results, and latencies.
+    """
+    pipeline = get_pipeline()
+    records = pipeline.get_audit_records(pilot=pilot)
+    return JSONResponse(
+        status_code=200,
+        content={
+            "total": len(records),
+            "records": [r.model_dump(mode="json") for r in records],
+        },
+    )
+
+
+@app.get("/api/v1/audit/{audit_id}", tags=["Audit"])
+def get_audit_record(audit_id: str) -> JSONResponse:
+    """Retrieve a single audit record by its audit_id (e.g. aud-SIE-0074)."""
+    pipeline = get_pipeline()
+    record = pipeline.get_audit_record(audit_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Audit record '{audit_id}' not found.",
+        )
+    return JSONResponse(status_code=200, content=record.model_dump(mode="json"))
+
+
 @app.post("/api/v1/action-requests/submit", tags=["Execution"])
 def store_action_request(body: ActionRequestPayload) -> JSONResponse:
     """Receive and store an ActionRequest without running the pipeline.
