@@ -285,6 +285,29 @@ def get_audit_record(audit_id: str) -> JSONResponse:
     return JSONResponse(status_code=200, content=record)
 
 
+@app.get("/api/v1/action-requests", tags=["Execution"])
+def list_action_requests(pilot: str | None = None, limit: int = 100) -> JSONResponse:
+    """List stored ActionRequests from SQLite.
+
+    Query params:
+      ?pilot=INDUSTRY_4   filter by pilot
+      ?limit=50           max records returned (default 100)
+    """
+    pipeline = get_pipeline()
+    rows = pipeline._db.list_action_requests(pilot=pilot, limit=limit)
+    return JSONResponse(status_code=200, content={"total": len(rows), "action_requests": rows})
+
+
+@app.get("/api/v1/action-requests/{request_id}", tags=["Execution"])
+def get_action_request(request_id: str) -> JSONResponse:
+    """Retrieve a single stored ActionRequest by its request_id."""
+    pipeline = get_pipeline()
+    row = pipeline._db.get_action_request(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"ActionRequest '{request_id}' not found.")
+    return JSONResponse(status_code=200, content=row)
+
+
 @app.post("/api/v1/action-requests/submit", tags=["Execution"])
 def store_action_request(body: ActionRequestPayload) -> JSONResponse:
     """Receive and store an ActionRequest without running the pipeline.
