@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: July 2026 — reflects actual implemented state of the repository. Schemas frozen with T5.4 (GFT); C4 verb catalogue documented; M6 closed; T5.5 interface question resolved at July 1 KOM (T5.5 is blueprint/scenario collection, not policy enforcement — downstream consumer of `t53.policy_updates` now open).
+> Last updated: September 2026 — reflects actual implemented state. SQLite persistence added; REST API expanded with full CRUD surface; decoupled C5 guardrail endpoints added; pilot validation hardened (fail-fast on unknown pilots); OPA binary added to Docker image.
 
 ---
 
@@ -41,20 +41,22 @@ vigilance-GATE/
 │
 ├── CLAUDE.md                          ← this file (persistent memory)
 ├── BLUEPRINT.md                       ← architectural blueprint (design rationale, GA mandate mapping)
-├── Dockerfile                         ← python:3.11-slim image
+├── Dockerfile                         ← python:3.11-slim + OPA static binary
 ├── docker-compose.yml                 ← full stack: gate + rabbitmq + ollama + dozzle
 ├── pyproject.toml                     ← package manifest and dependencies
 │
 ├── data/                              ← generated output (mounted from container /app/data)
-│   └── workflow_audit.csv             ← one row per pipeline execution (raw → canonical → result)
+│   ├── workflow_audit.csv             ← one row per pipeline execution (raw → canonical → result)
+│   └── vigilance.db                   ← SQLite store (events, action_requests, results, audit_records)
 │
 ├── vigilance/                         ← main application package
 │   ├── main.py                        ← entrypoint (REST API + broker consumer)
 │   ├── service.py                     ← service lifecycle / broker consumer
 │   ├── pipeline.py                    ← T53Pipeline — INTEGRATED mode orchestration
 │   ├── workflow_logger.py             ← WorkflowCSVLogger — per-execution audit CSV
+│   ├── db.py                          ← Database — SQLite persistence layer (4 tables)
 │   ├── api/                           ← REST API (FastAPI, port 8000)
-│   │   └── app.py                     ← POST /api/v1/events, POST /api/v1/action-requests, GET /api/v1/health, GET /api/v1/profiles
+│   │   └── app.py                     ← full REST surface (see REST API section below)
 │   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
 │   ├── llm/                           ← LLM abstraction layer
 │   │   ├── base.py                    ← LLMProvider ABC + StubLLMProvider
@@ -179,10 +181,63 @@ RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 - T5.3 returns 202 Accepted immediately after dispatching — never blocks on downstream policy consumer or pilot tool response.
 - C1 and ActionRequest consumers run on independent threads (PR #22) to prevent LLM blocking.
 - RabbitMQ heartbeat is disabled (heartbeat=0) to prevent connection reset during LLM calls (PR #18).
-- UNKNOWN pilot falls back to TELECOM profile with a warning log; never hard-fails on unknown sector.
+- **Unknown pilots are hard-rejected.** If C1 cannot detect a valid pilot from the raw event, or if an ActionRequest carries an unrecognised pilot string, the pipeline raises `ValueError` with the list of supported pilots (`TELECOM`, `INDUSTRY_4`, `MARITIME`, `FINANCE`). There is no silent fallback.
 - Production dispatch (`pipeline._dispatch()`) publishes fire-and-forget to the broker — it does **not** call per-verb C4 adapter routing at runtime. The `ActionExecutor` class (c3_execution/executor.py) implements per-verb routing and is used in tests and direct in-process calls.
 - `execute_action_request()` returns `tuple[ExecutionResult, str | None]` — the second element is the generated Rego rule string when `policy_update` was present, otherwise `None`. The REST API unwraps this tuple and includes `policy_translation` in the response body.
 - `data/workflow_audit.csv` is thread-safe (file lock per write) and captures the complete C1 → C5 → C3 → C4 telemetry per event.
+- `data/vigilance.db` (SQLite) is the durable store for all four artefact types. In-memory caches serve as the fast path within a session; the DB is the fallback and survives container restarts.
+- The C5 guardrail can be invoked standalone (without C3/C4 dispatch) via `POST /api/v1/action-requests/submit` + `POST /api/v1/action-requests/{request_id}/guardrail`. This decoupled path does not open an audit record.
+
+### REST API surface
+
+The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pipeline through the following endpoints. All are backed by SQLite persistence — GET endpoints return data that survives container restarts.
+
+**System**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/health` | Liveness check — returns status and loaded pilots |
+| `GET` | `/api/v1/profiles` | All four sector profiles with thresholds and plugin sets |
+| `GET` | `/api/v1/formats` | Supported C1 log formats in parser priority order, with detection signals and examples |
+
+**Events (C1)**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/events` | Submit raw event → C1 normalize → store in SQLite → publish to broker. Returns 202 + full CanonicalEvent |
+| `GET` | `/api/v1/events` | List all ingested CanonicalEvents from SQLite. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/events/{event_id}` | Retrieve a single CanonicalEvent by ID |
+
+**Execution (C5 + C3 + C4)**
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/action-requests` | Full pipeline: C5 guardrail → C3 policy → C4 dispatch → audit → result. Returns ExecutionResult (200 success / 207 partial) |
+| `GET` | `/api/v1/action-requests` | List all stored ActionRequests from SQLite. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/action-requests/{request_id}` | Retrieve a single stored ActionRequest |
+| `POST` | `/api/v1/action-requests/submit` | Store ActionRequest without executing. Returns 202 + request_id for later guardrail check |
+| `POST` | `/api/v1/action-requests/{request_id}/guardrail` | Run C5 guardrail only on a stored request. Returns GuardrailCheck verdict. No audit record, no dispatch |
+
+**Results**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/results/{request_id}` | Retrieve ExecutionResult for a completed request. Includes `policy_translation` if Rego was generated |
+
+**Audit**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/audit` | List all AuditRecords from SQLite. Supports `?pilot=` |
+| `GET` | `/api/v1/audit/{audit_id}` | Retrieve a single AuditRecord by ID (e.g. `aud-SIE-0074`) |
+
+**Two-step manual flow** (decoupled guardrail):
+1. `POST /api/v1/events` → get `event_id`
+2. `POST /api/v1/action-requests/submit` → get `request_id`
+3. `POST /api/v1/action-requests/{request_id}/guardrail` → inspect verdict
+4. `POST /api/v1/action-requests` → execute full pipeline when satisfied
+
+**Automatic flow** (T5.4 integration): steps 1 and 4 only.
 
 ### Multi-pilot runtime
 
@@ -527,6 +582,7 @@ Adapter sets exist under `c4_adapters/maritime/` and `c4_adapters/finance/` for 
 | `API_PORT` | REST API port | `8000` |
 | `VIGILANCE_CONFIDENCE_THRESHOLD` | Override default confidence threshold (profile value takes precedence) | `0.80` |
 | `VIGILANCE_PROTECTED_RANGES` | CIDR list of hosts that must never be actioned | `10.0.0.0/8,192.168.0.0/16` |
+| `DB_PATH` | Path for SQLite database file | `data/vigilance.db` |
 
 ### Running the full stack
 
@@ -584,7 +640,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 - [ ] **Raw pilot event data → T5.5** (July 1 KOM action item) — INNOV commits to obtaining sample event data from OTE and Siemens and forwarding it to STAM for T5.5 blueprint and scenario collection. Emails sent to both pilots. Siemens has replied; awaiting their data. OTE first response still pending.
 - [ ] **C3 target resolution** — `ActionExecutor._build_params()` currently only injects `event_id` and `pilot` into adapter params. Real target values from the CanonicalEvent (`src_ip`, `plc_id`, `subscriber_id`, `cell_id`, etc.) are not yet extracted and forwarded to adapters. Symptom: the OTE SIEM stub's `block_ip` message echoes `event_id` where an IP should appear. Fix scope: M10–M15, alongside the real C4 adapter implementations.
 - [ ] **API key authentication enforcement** — planned M7–M9.
-- [ ] **Audit REST endpoint** — planned M7–M9; will expose `AuditRecord` history.
+- [x] **Audit REST endpoint** — implemented (`GET /api/v1/audit`, `GET /api/v1/audit/{audit_id}`). Backed by SQLite; survives restarts.
 - [ ] **Real C4 adapters** — all adapters currently return canned stub responses. Real implementations against pilot tool APIs are M10–M15, scoped to OTE and Siemens only.
 - [ ] **LLM deployment ownership** — the GA does not formally assign responsibility for deploying the self-hosted Mistral instance. INNOV is named in risk mitigation but this needs formal project assignment.
 - [ ] **Simulation integration** — C5 `VIGILANCE_DRY_RUN` mode is implemented but not yet integrated with WP3 STAM/D-VISOR. Broker topic names and synthetic event format must be agreed with STAM.
@@ -604,7 +660,8 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 | M3–M4 | ✅ Done | Initial architecture design, component identification |
 | M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
 | M6 | ✅ Done | CanonicalEvent / ActionRequest / GuardrailCheck / ExecutionResult / ActionResult / AuditRecord schemas frozen with T5.4 (GFT); C4 verb catalogue documented for OTE and Siemens; C2/AgentLoop and STANDALONE/DIGITAL_TWIN modes removed (PR #28) |
-| M7–M9 | 🔄 Next | API key auth enforcement; audit REST endpoint; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
+| M6+ | ✅ Done | Full REST API surface (15 endpoints); SQLite persistence layer; decoupled C5 guardrail API; OPA binary in Docker image; PolicyTranslator few-shot prompt improved; unknown pilots hard-rejected; `canonical_event` returned in event submission response |
+| M7–M9 | 🔄 Next | API key auth enforcement; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
 | M10–M15 | 🔜 Planned | Real C4 adapter implementations (OTE + Siemens); C3 target resolution from CanonicalEvent; pilot validation data |
 
 ### Risk register items to monitor

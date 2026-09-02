@@ -8,7 +8,7 @@
 **Project:** VIGILANCE — Horizon Europe GAP-101249737
 **Task:** T5.3 — Agentic Wrappers for Cybersecurity Technologies
 **Task Lead:** INNOV-ACTS
-**Last updated:** July 2026
+**Last updated:** September 2026
 
 ---
 
@@ -148,11 +148,13 @@ Adding a fifth sector requires: a new YAML profile, three new C4 adapter plugins
 
 ## Audit and Observability
 
-T5.3 produces two audit artefacts:
+T5.3 produces three audit artefacts:
 
-**AuditRecord** — in-memory record opened at C5 gate entry and closed after dispatch. Captures guard verdict, action results, and latencies. Will be exposed via a REST endpoint at M7–M9.
+**SQLite database** (`data/vigilance.db`) — the primary durable store. Four tables persist all pipeline artefacts across container restarts: `events` (CanonicalEvent + C1 metadata), `action_requests` (stored ActionRequests), `results` (ExecutionResult + generated Rego), `audit_records` (full AuditRecord lifecycle). Queryable via the REST API. Path overridden with `DB_PATH` env var.
 
-**WorkflowCSVLogger** — thread-safe CSV append per pipeline execution. Captures the full C1 → C5 → C3 → C4 telemetry: raw event, parser used, LLM calls in each stage, guardrail verdict and reasons, generated Rego, dispatched actions, and overall success. Written to `data/workflow_audit.csv` (mounted volume). This is the primary operational observability surface for the current phase.
+**AuditRecord** — written to SQLite at dispatch closure. Captures C5 verdict, action results, and latencies per request. Exposed via `GET /api/v1/audit` (list) and `GET /api/v1/audit/{audit_id}` (single record).
+
+**WorkflowCSVLogger** — thread-safe CSV append per pipeline execution. Captures the full C1 → C5 → C3 → C4 telemetry: raw event, parser used, LLM calls in each stage, guardrail verdict and reasons, generated Rego, dispatched actions, and overall success. Written to `data/workflow_audit.csv` (mounted volume).
 
 **RabbitMQ management UI** (http://localhost:15672) provides real-time queue depth and message throughput visibility.
 
@@ -183,7 +185,11 @@ The following capabilities are designed for but not yet implemented. They are pa
 | Real C4 adapter implementations (OTE, Siemens) | Planned | M10–M15 |
 | C4 target resolution from CanonicalEvent fields | Planned | M10–M15 |
 | API key authentication on REST API | Planned | M7–M9 |
-| Audit REST endpoint (`GET /api/v1/audit`) | Planned | M7–M9 |
+| Audit REST endpoints (`GET /api/v1/audit`, `GET /api/v1/audit/{audit_id}`) | ✅ Implemented | Done |
+| Result retrieval (`GET /api/v1/results/{request_id}`) | ✅ Implemented | Done |
+| Event retrieval (`GET /api/v1/events`, `GET /api/v1/events/{event_id}`) | ✅ Implemented | Done |
+| ActionRequest retrieval (`GET /api/v1/action-requests`, `GET /api/v1/action-requests/{request_id}`) | ✅ Implemented | Done |
+| SQLite persistence for all pipeline artefacts | ✅ Implemented | Done |
 | Downstream consumer of `t53.policy_updates` | Open | M7–M9 (T5.6 discussion) |
 | WP3 / D-VISOR synthetic event integration | Open | Post-M18 |
 | RS4 reusable wrapper packaging | Planned | M18 |
