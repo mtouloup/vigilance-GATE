@@ -208,6 +208,83 @@ def submit_event(body: RawEventRequest) -> JSONResponse:
     )
 
 
+@app.get("/api/v1/events", tags=["Events"])
+def list_events(pilot: str | None = None, limit: int = 100) -> JSONResponse:
+    """List ingested CanonicalEvents from the SQLite store.
+
+    Query params:
+      ?pilot=INDUSTRY_4   filter by pilot
+      ?limit=50           max records returned (default 100)
+    """
+    pipeline = get_pipeline()
+    events = pipeline._db.list_events(pilot=pilot, limit=limit)
+    return JSONResponse(
+        status_code=200,
+        content={"total": len(events), "events": events},
+    )
+
+
+@app.get("/api/v1/events/{event_id}", tags=["Events"])
+def get_event(event_id: str) -> JSONResponse:
+    """Retrieve a single CanonicalEvent by its event_id."""
+    pipeline = get_pipeline()
+    event = pipeline._db.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found.")
+    return JSONResponse(status_code=200, content=event)
+
+
+@app.get("/api/v1/results/{request_id}", tags=["Results"])
+def get_result(request_id: str) -> JSONResponse:
+    """Retrieve the ExecutionResult for a completed ActionRequest.
+
+    Returns the full result including action outcomes, overall success,
+    and the generated Rego rule if a policy_update was present.
+    """
+    pipeline = get_pipeline()
+    result = pipeline.get_result(request_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No result found for request_id '{request_id}'. "
+                   "The request may not have been executed yet.",
+        )
+    content = dict(result)
+    rego = content.pop("rego_rule", None)
+    if rego:
+        content["policy_translation"] = {"rego_output": rego}
+    return JSONResponse(status_code=200, content=content)
+
+
+@app.get("/api/v1/audit", tags=["Audit"])
+def list_audit_records(pilot: str | None = None) -> JSONResponse:
+    """List all audit records, optionally filtered by pilot.
+
+    Query param: ?pilot=INDUSTRY_4
+    Each record covers one ActionRequest lifecycle from C5 gate entry
+    to dispatch closure, including verdict, action results, and latencies.
+    """
+    pipeline = get_pipeline()
+    records = pipeline.get_audit_records(pilot=pilot)
+    return JSONResponse(
+        status_code=200,
+        content={"total": len(records), "records": records},
+    )
+
+
+@app.get("/api/v1/audit/{audit_id}", tags=["Audit"])
+def get_audit_record(audit_id: str) -> JSONResponse:
+    """Retrieve a single audit record by its audit_id (e.g. aud-SIE-0074)."""
+    pipeline = get_pipeline()
+    record = pipeline.get_audit_record(audit_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Audit record '{audit_id}' not found.",
+        )
+    return JSONResponse(status_code=200, content=record)
+
+
 @app.post("/api/v1/action-requests/submit", tags=["Execution"])
 def store_action_request(body: ActionRequestPayload) -> JSONResponse:
     """Receive and store an ActionRequest without running the pipeline.
