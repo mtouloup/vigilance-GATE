@@ -110,8 +110,9 @@ vigilance-GATE/
 │   ├── service.py              Broker consumer service
 │   ├── main.py                 Combined entrypoint: REST API + broker consumer
 │   ├── workflow_logger.py      WorkflowCSVLogger — per-execution CSV audit trail
+│   ├── db.py                   Database — SQLite persistence layer (4 tables)
 │   ├── api/
-│   │   └── app.py              FastAPI REST API (port 8000)
+│   │   └── app.py              FastAPI REST API (port 8000, 15 endpoints)
 │   ├── llm/
 │   │   ├── base.py             LLMProvider ABC + StubLLMProvider (tests)
 │   │   ├── ollama_provider.py  OllamaLLMProvider (mistral:7b + mistral-nemo)
@@ -147,7 +148,8 @@ vigilance-GATE/
 │   ├── broker/topics.yaml      Broker integration interface spec
 │   └── profiles/               Sector profile YAML schema
 ├── data/                       Generated output (mounted volume)
-│   └── workflow_audit.csv      Per-execution pipeline telemetry (C1 → C5 → C3 → C4)
+│   ├── workflow_audit.csv      Per-execution pipeline telemetry (C1 → C5 → C3 → C4)
+│   └── vigilance.db            SQLite store — events, action_requests, results, audit_records
 ├── tools/
 │   ├── publish_event.sh        Example producer script for pilot partners
 │   └── simulate_t54.sh         Simulates T5.4 orchestrator (INTEGRATED mode testing)
@@ -201,6 +203,7 @@ Startup order enforced by healthchecks:
 
 Generated files on your host:
 - `./data/workflow_audit.csv` — one row per completed pipeline execution (see [Workflow Audit CSV](#workflow-audit-csv))
+- `./data/vigilance.db` — SQLite store for all pipeline artefacts; survives container restarts
 
 ### Reuse Models Already on Your Host
 
@@ -410,8 +413,11 @@ Dry-run: C5 guardrail and AuditLog run normally; broker dispatch is skipped; all
 | `OLLAMA_MODELS_DIR` | `ollama_data` (volume) | Bind-mount host model cache to skip download |
 | `VIGILANCE_DRY_RUN` | *(unset)* | `true` → skip broker dispatch; logs actions only |
 | `WORKFLOW_CSV_PATH` | `workflow_audit.csv` | Path for workflow audit CSV output |
+| `DB_PATH` | `data/vigilance.db` | Path for SQLite database file |
 | `API_HOST` | `0.0.0.0` | REST API bind address |
 | `API_PORT` | `8000` | REST API port |
+| `VIGILANCE_CONFIDENCE_THRESHOLD` | `0.80` | Override default confidence threshold (profile value takes precedence) |
+| `VIGILANCE_PROTECTED_RANGES` | *(unset)* | Comma-separated CIDR list of hosts that must never be actioned |
 
 ---
 
@@ -457,12 +463,44 @@ any external system that cannot use the RabbitMQ broker directly.
 
 ### Endpoints
 
+**System**
+
 | Method | Path | Response | Description |
 |---|---|---|---|
 | `GET` | `/api/v1/health` | 200 | Liveness check — returns loaded pilots and timestamp |
 | `GET` | `/api/v1/profiles` | 200 | All four sector profiles (plugins, thresholds, OT flags) |
-| `POST` | `/api/v1/events` | **202 Accepted** | Submit raw event → C1 → `t53.canonical_events`; returns `event_id` and detected `pilot` |
-| `POST` | `/api/v1/action-requests` | 200 / 207 | Submit `ActionRequest` → C5+C3+C4; returns `ExecutionResult` (+ `policy_translation` when Rego was generated) |
+| `GET` | `/api/v1/formats` | 200 | Supported C1 log formats in parser priority order, with detection signals and examples |
+
+**Events (C1)**
+
+| Method | Path | Response | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/events` | **202 Accepted** | Submit raw event → C1 normalize → SQLite → broker. Returns full `CanonicalEvent` |
+| `GET` | `/api/v1/events` | 200 | List all ingested CanonicalEvents from SQLite. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/events/{event_id}` | 200 | Retrieve a single CanonicalEvent by ID |
+
+**Execution (C5 + C3 + C4)**
+
+| Method | Path | Response | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/action-requests` | 200 / 207 | Full pipeline: C5 guardrail → C3 policy → C4 dispatch → audit → result |
+| `GET` | `/api/v1/action-requests` | 200 | List stored ActionRequests from SQLite. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/action-requests/{request_id}` | 200 | Retrieve a single stored ActionRequest |
+| `POST` | `/api/v1/action-requests/submit` | **202 Accepted** | Store ActionRequest without executing — for manual/decoupled flow |
+| `POST` | `/api/v1/action-requests/{request_id}/guardrail` | 200 | Run C5 guardrail only on a stored request. Returns `GuardrailCheck` verdict; no dispatch |
+
+**Results**
+
+| Method | Path | Response | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/results/{request_id}` | 200 | ExecutionResult for a completed request. Includes `policy_translation` if Rego was generated |
+
+**Audit**
+
+| Method | Path | Response | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/audit` | 200 | List all AuditRecords from SQLite. Supports `?pilot=` |
+| `GET` | `/api/v1/audit/{audit_id}` | 200 | Retrieve a single AuditRecord by ID (e.g. `aud-SIE-0074`) |
 
 ### Interactive Documentation
 
@@ -475,12 +513,53 @@ any external system that cannot use the RabbitMQ broker directly.
 ### Example — Submit Event via REST
 
 ```bash
+# Submit a raw event — response includes the full CanonicalEvent
 curl -X POST http://localhost:8000/api/v1/events \
   -H "Content-Type: application/json" \
   -d '{"raw": "CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=230 nodes=3 app=SSH"}'
 
+# List ingested events (filter by pilot)
+curl "http://localhost:8000/api/v1/events?pilot=TELECOM&limit=10"
+
+# Retrieve a specific event
+curl http://localhost:8000/api/v1/events/<event_id>
+
 curl http://localhost:8000/api/v1/health
 curl http://localhost:8000/api/v1/profiles
+curl http://localhost:8000/api/v1/formats
+```
+
+### Example — Decoupled C5 Guardrail Flow
+
+```bash
+# Step 1 — store an ActionRequest without executing
+curl -X POST http://localhost:8000/api/v1/action-requests/submit \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "req-001",
+    "event_id": "<event_id>",
+    "pilot": "TELECOM",
+    "actions": ["block_ip", "revoke_session", "notify_soc"],
+    "agent_confidence": 0.96
+  }'
+
+# Step 2 — inspect the C5 verdict before committing to execution
+curl -X POST http://localhost:8000/api/v1/action-requests/req-001/guardrail
+
+# Step 3 — execute the full pipeline when satisfied
+curl -X POST http://localhost:8000/api/v1/action-requests \
+  -H "Content-Type: application/json" \
+  -d '{
+    "request_id": "req-001",
+    "event_id": "<event_id>",
+    "pilot": "TELECOM",
+    "actions": ["block_ip", "revoke_session", "notify_soc"],
+    "agent_confidence": 0.96
+  }'
+
+# Step 4 — retrieve the result and audit record
+curl http://localhost:8000/api/v1/results/req-001
+curl http://localhost:8000/api/v1/audit
 ```
 
 ---

@@ -1,10 +1,28 @@
 """T5.3 REST API — T5.6 Agentic ZTA Platform Integration point.
 
-Endpoints:
-  POST /api/v1/events          Submit raw event → C1 normalize → publish to broker (202)
-  POST /api/v1/action-requests Submit ActionRequest → C5+C3+C4 execute → result (200/207)
-  GET  /api/v1/profiles        All four sector profiles
-  GET  /api/v1/health          Liveness check
+System:
+  GET  /api/v1/health                                  Liveness check
+  GET  /api/v1/profiles                                All four sector profiles
+  GET  /api/v1/formats                                 Supported C1 log formats
+
+Events (C1):
+  POST /api/v1/events                                  Raw event → C1 normalize → SQLite → broker (202)
+  GET  /api/v1/events                                  List CanonicalEvents from SQLite
+  GET  /api/v1/events/{event_id}                       Single CanonicalEvent
+
+Execution (C5 + C3 + C4):
+  POST /api/v1/action-requests                         Full pipeline (200/207)
+  GET  /api/v1/action-requests                         List stored ActionRequests
+  GET  /api/v1/action-requests/{request_id}            Single stored ActionRequest
+  POST /api/v1/action-requests/submit                  Store only, no execution (202)
+  POST /api/v1/action-requests/{request_id}/guardrail  C5 guardrail check only
+
+Results:
+  GET  /api/v1/results/{request_id}                    ExecutionResult + optional Rego
+
+Audit:
+  GET  /api/v1/audit                                   List AuditRecords
+  GET  /api/v1/audit/{audit_id}                        Single AuditRecord
 """
 from __future__ import annotations
 
