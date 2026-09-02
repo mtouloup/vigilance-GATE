@@ -78,7 +78,6 @@ services:
         until ollama list > /dev/null 2>&1; do sleep 2; done &&
         echo 'Ollama ready. Checking models...' &&
         ollama pull mistral:7b &&
-        ollama pull mistral-nemo &&
         echo 'Models ready.'
       "
     depends_on:
