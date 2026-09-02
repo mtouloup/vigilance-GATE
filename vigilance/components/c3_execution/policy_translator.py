@@ -51,8 +51,10 @@ the downstream policy engine operator.
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
+import tempfile
 
 from vigilance.llm.base import LLMProvider
 
@@ -236,20 +238,30 @@ class PolicyTranslator:
         """
         if not self._opa_available:
             return True, ""
+        tmp_path = None
         try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".rego", delete=False
+            ) as f:
+                f.write(rego)
+                tmp_path = f.name
             result = subprocess.run(
-                ["opa", "parse", "-"],
-                input=rego,
+                ["opa", "parse", tmp_path],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             if result.returncode == 0:
                 return True, ""
-            return False, result.stderr.strip()
+            # OPA writes parse errors to stdout as JSON; stderr is usually empty
+            error = result.stdout.strip() or result.stderr.strip()
+            return False, error
         except Exception as exc:
             logger.warning("PolicyTranslator: OPA parse subprocess error: %s", exc)
             return True, ""
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def _strip_fences(self, text: str) -> str:
         """Remove markdown code fences that the LLM may have wrapped the output in."""
