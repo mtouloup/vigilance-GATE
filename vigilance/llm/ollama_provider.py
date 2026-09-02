@@ -1,4 +1,4 @@
-"""OllamaLLMProvider — real LLM backend via Ollama (mistral:7b + mistral-nemo)."""
+"""OllamaLLMProvider — real LLM backend via Ollama (mistral:7b)."""
 from __future__ import annotations
 
 import json
@@ -6,9 +6,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Models match the T5.3 spec exactly
-FAST_MODEL = "phi3:mini"         # C1 fallback parser, C5 semantic guardrail — 3.8B params, ~2× faster than 7B on CPU
-REASONING_MODEL = "mistral:7b"   # C3 NL→Rego policy translation — 7B needed for Rego quality
+# Both roles use the same model; the split is retained for future tuning.
+FAST_MODEL = "mistral:7b"        # C1 fallback parser, C5 semantic guardrail
+REASONING_MODEL = "mistral:7b"   # C3 NL→Rego policy translation
 
 # Injected into every agentic-loop system prompt so the model returns parseable JSON
 _AGENTIC_JSON_INSTRUCTION = """
@@ -39,8 +39,15 @@ Use null for fields that cannot be determined from the text — do NOT guess or 
 
 Field-specific rules:
 - "pilot": must be one of TELECOM, MARITIME, FINANCE, INDUSTRY_4.
-  Return null unless the text explicitly mentions telecom/network operators, maritime/vessel/port,
-  banking/finance/fraud, or industrial control systems/OT/SCADA/PLC.
+  Match the FIRST applicable keyword group below:
+  • INDUSTRY_4 — any of: PLC, SCADA, OPC-UA, OPC_UA, Modbus, DNP3, IEC-104, register,
+    interlock, relay, actuator, sensor-node, industrial, OT, WWTP, pump, compressor,
+    zone-A, zone-B, zone-C, zone-D, scada_zone, ladder logic, field device
+  • MARITIME   — any of: vessel, ship, port, AIS, MMSI, cargo, dock, berth, maritime, nautical
+  • FINANCE    — any of: account, transaction, fraud, bank, SWIFT, payment, credit, ATM, card
+  • TELECOM    — any of: subscriber, IMSI, cell, SIM, SS7, Diameter, 5G, LTE, base station,
+    network operator, mobile network
+  Return null ONLY if none of the above keywords appear anywhere in the text.
 - "severity": must be one of LOW, MEDIUM, HIGH, CRITICAL. Return null if not inferable.
 - "ot_protocol": only for industrial OT protocols (OPC-UA, Modbus, DNP3, IEC-104). Return null
   for telecom protocols (SS7, Diameter, SIP) or any non-OT protocol.
@@ -58,15 +65,12 @@ No prose, no markdown, no explanation — JSON object only.
 
 
 class OllamaLLMProvider:
-    """LLM provider backed by a local Ollama instance.
-
-    Uses mistral:7b for fast extraction tasks and mistral-nemo for multi-turn
-    agentic reasoning, matching the T5.3 spec.
+    """LLM provider backed by a local Ollama instance (mistral:7b).
 
     Args:
         base_url: Ollama API base URL (default: http://localhost:11434).
         fast_model: Model for C1/C5 extraction tasks.
-        reasoning_model: Model for C2/C3 reasoning tasks.
+        reasoning_model: Model for C3 Rego generation.
         timeout: HTTP request timeout in seconds.
     """
 
@@ -103,7 +107,7 @@ class OllamaLLMProvider:
         )
 
     def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
-        """Run a semantic guardrail review using the fast model (mistral:7b).
+        """Run a semantic guardrail review using the fast model.
 
         Called by C5 SafetyGate for borderline/ESCALATE cases to obtain a
         second-opinion verdict before halting automated execution.
@@ -120,7 +124,7 @@ class OllamaLLMProvider:
         )
 
     def extract_fields(self, raw_text: str, fields: list[str]) -> dict:
-        """Extract structured fields from raw text using the fast model (mistral:7b).
+        """Extract structured fields from raw text using the fast model.
 
         Returns a dict mapping each requested field name to its extracted value
         (or None if not found).

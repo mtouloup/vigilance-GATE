@@ -60,7 +60,7 @@ vigilance-GATE/
 │   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
 │   ├── llm/                           ← LLM abstraction layer
 │   │   ├── base.py                    ← LLMProvider ABC + StubLLMProvider
-│   │   └── ollama_provider.py         ← OllamaLLMProvider (Phi-3 Mini 3.8B fast + Mistral 7B reasoning)
+│   │   └── ollama_provider.py         ← OllamaLLMProvider (mistral:7b for all LLM tasks)
 │   ├── models/                        ← Pydantic v2 data models (frozen schema)
 │   │   ├── canonical_event.py
 │   │   ├── action_request.py
@@ -116,10 +116,10 @@ vigilance-GATE/
 
 | ID | Name | Status | LLM? |
 |---|---|---|---|
-| C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Phi-3 Mini 3.8B fallback for unknown formats |
+| C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Mistral 7B fallback for unknown formats |
 | C3 | Action & Policy Execution | ✅ Implemented | Conditional — Mistral 7B for NL→Rego translation |
 | C4 | Tool Adapter Layer | ✅ Implemented | No — deterministic API translation |
-| C5 | Safety, Audit & Simulation | ✅ Implemented | Conditional — Phi-3 Mini 3.8B semantic check for ESCALATE verdicts |
+| C5 | Safety, Audit & Simulation | ✅ Implemented | Conditional — Mistral 7B semantic check for ESCALATE verdicts |
 | C6 | Sector Profile Manager | ✅ Implemented | Indirect — sets per-sector context at startup |
 | ~~C2~~ | ~~Agentic Interaction Layer~~ | ❌ Removed | Reasoning is T5.4 + T5.2 domain |
 
@@ -154,7 +154,7 @@ C5 — Safety Gate (pre-execution)
   │    ③ len(actions) ≤ 5 (proportionality)
   │    ④ OT: isolate_plc requires mode="safe-state"
   │    ⑤ OT: ZTA scope must be zone-limited
-  │  LLM semantic guardrail (Phi-3 Mini 3.8B) for ESCALATE cases
+  │  LLM semantic guardrail (Mistral 7B) for ESCALATE cases
   │  → GuardrailCheck {verdict: APPROVED | REJECTED | ESCALATE}
   ▼
 C3 — Action & Policy Execution
@@ -264,11 +264,11 @@ All queues are durable and pre-declared via `infra/rabbitmq/definitions.json` at
 
 | Component | Model | Purpose | Frequency |
 |---|---|---|---|
-| C1 | Phi-3 Mini 3.8B (`phi3:mini`) | Field extraction from unknown/novel log formats | Low — fallback only when no deterministic parser matches |
+| C1 | Mistral 7B (`mistral:7b`) | Field extraction from unknown/novel log formats | Low — fallback only when no deterministic parser matches |
 | C3 | Mistral 7B (`mistral:7b`) | NL → OPA/Rego policy rule translation | Low — only when `policy_update` field is set |
-| C5 | Phi-3 Mini 3.8B (`phi3:mini`) | Semantic guardrail second-opinion for ESCALATE verdicts | Low — borderline cases only |
+| C5 | Mistral 7B (`mistral:7b`) | Semantic guardrail second-opinion for ESCALATE verdicts | Low — borderline cases only |
 
-**Model split rationale:** Phi-3 Mini (~3.8B params) handles short JSON extraction and binary verdict tasks — it is ~2× faster than Mistral 7B on CPU and sufficient for these structured-output tasks. Mistral 7B is retained for C3 Rego generation, which requires more complex reasoning over multi-line code output. Both models are pulled by `ollama-init` at stack startup. `OLLAMA_KEEP_ALIVE=-1` keeps both resident in RAM to avoid per-request cold-start overhead.
+`ollama-init` pulls `mistral:7b` at stack startup. `OLLAMA_KEEP_ALIVE=-1` keeps the model resident in RAM to avoid per-request cold-start overhead.
 
 **C2 (reasoning loop) has been removed.** Reasoning is T5.4's responsibility.
 
@@ -390,7 +390,7 @@ Produced by C5 pre-execution. Internal only — not published to the broker; use
 }
 ```
 
-The five deterministic gates ① confidence, ② protected-IP allowlist, ③ proportionality, ④ `isolate_plc` safe-state, ⑤ OT ZTA zone scope. `ESCALATE` triggers a Phi-3 Mini 3.8B semantic second-opinion; the LLM output resolves to `APPROVED` when proportionate or `REJECTED` otherwise.
+The five deterministic gates ① confidence, ② protected-IP allowlist, ③ proportionality, ④ `isolate_plc` safe-state, ⑤ OT ZTA zone scope. `ESCALATE` triggers a Mistral 7B semantic second-opinion; the LLM output resolves to `APPROVED` when proportionate or `REJECTED` otherwise.
 
 ---
 
@@ -492,7 +492,7 @@ Internal T5.3 audit trail, persisted per request. Backs the REST audit endpoint 
 | `agent_confidence` | Confidence from T5.4 |
 | `guardrail_verdict` | APPROVED \| REJECTED \| ESCALATE |
 | `guardrail_reasons` | Pipe-separated reason strings |
-| `c5_llm_invoked` | True when Mistral 7B semantic check ran |
+| `c5_llm_invoked` | True when LLM semantic check ran in C5 |
 | `c5_llm_response` | Raw LLM JSON response (or empty) |
 | `policy_update_nl` | NL policy input (or empty) |
 | `c3_llm_invoked` | True when Nemo 12B NL→Rego ran |
@@ -595,7 +595,7 @@ docker compose up --build
 Services:
 - `vigilance-gate` — T5.3 application + REST API (port 8000)
 - `rabbitmq` — RabbitMQ 3.13 with management UI at http://localhost:15672 (vigilance/vigilance)
-- `ollama` + `ollama-init` — LLM server with `mistral:7b` and `mistral-nemo` pulled at startup
+- `ollama` + `ollama-init` — LLM server with `mistral:7b` pulled at startup
 - `dozzle` — real-time log viewer for all containers at http://localhost:9999
 
 Generated output persisted on host:

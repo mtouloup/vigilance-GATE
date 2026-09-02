@@ -4,7 +4,7 @@ version: "3.9"
 #
 # Services:
 #   rabbitmq       Message broker — queues pre-declared at startup
-#   ollama         LLM server (mistral:7b + mistral-nemo)
+#   ollama         LLM server (mistral:7b)
 #   ollama-init    One-shot model downloader (exits after pull)
 #   vigilance-gate The Agentic Wrapper Framework (T5.3)
 #   dozzle         Real-time log viewer → http://localhost:9999
@@ -65,7 +65,7 @@ services:
     #           capabilities: [gpu]
 
   # ── Model initialiser (runs once, then exits) ─────────────────────────────────
-  # Pulls mistral:7b and mistral-nemo if not already present in the volume.
+  # Pulls mistral:7b if not already present in the volume.
   # Idempotent — does not re-download models that are already cached.
   # Polls until Ollama's API responds before pulling (replaces the removed healthcheck).
   ollama-init:
@@ -80,7 +80,6 @@ services:
         echo 'Waiting for Ollama API...' &&
         until ollama list > /dev/null 2>&1; do sleep 2; done &&
         echo 'Ollama ready. Checking models...' &&
-        ollama pull phi3:mini &&
         ollama pull mistral:7b &&
         echo 'Models ready.'
       "
