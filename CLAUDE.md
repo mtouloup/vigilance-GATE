@@ -60,7 +60,7 @@ vigilance-GATE/
 │   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
 │   ├── llm/                           ← LLM abstraction layer
 │   │   ├── base.py                    ← LLMProvider ABC + StubLLMProvider
-│   │   └── ollama_provider.py         ← OllamaLLMProvider (Mistral 7B + Nemo 12B)
+│   │   └── ollama_provider.py         ← OllamaLLMProvider (Phi-3 Mini 3.8B fast + Mistral 7B reasoning)
 │   ├── models/                        ← Pydantic v2 data models (frozen schema)
 │   │   ├── canonical_event.py
 │   │   ├── action_request.py
@@ -116,10 +116,10 @@ vigilance-GATE/
 
 | ID | Name | Status | LLM? |
 |---|---|---|---|
-| C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Mistral 7B fallback for unknown formats |
-| C3 | Action & Policy Execution | ✅ Implemented | Conditional — Mistral Nemo 12B for NL→Rego translation |
+| C1 | Event Ingestion & Normalization | ✅ Implemented | Conditional — Phi-3 Mini 3.8B fallback for unknown formats |
+| C3 | Action & Policy Execution | ✅ Implemented | Conditional — Mistral 7B for NL→Rego translation |
 | C4 | Tool Adapter Layer | ✅ Implemented | No — deterministic API translation |
-| C5 | Safety, Audit & Simulation | ✅ Implemented | Conditional — Mistral 7B semantic check for ESCALATE verdicts |
+| C5 | Safety, Audit & Simulation | ✅ Implemented | Conditional — Phi-3 Mini 3.8B semantic check for ESCALATE verdicts |
 | C6 | Sector Profile Manager | ✅ Implemented | Indirect — sets per-sector context at startup |
 | ~~C2~~ | ~~Agentic Interaction Layer~~ | ❌ Removed | Reasoning is T5.4 + T5.2 domain |
 
@@ -154,15 +154,15 @@ C5 — Safety Gate (pre-execution)
   │    ③ len(actions) ≤ 5 (proportionality)
   │    ④ OT: isolate_plc requires mode="safe-state"
   │    ⑤ OT: ZTA scope must be zone-limited
-  │  LLM semantic guardrail (Mistral 7B) for ESCALATE cases
+  │  LLM semantic guardrail (Phi-3 Mini 3.8B) for ESCALATE cases
   │  → GuardrailCheck {verdict: APPROVED | REJECTED | ESCALATE}
   ▼
 C3 — Action & Policy Execution
-  │  NL→Rego translation if policy_update present (Mistral Nemo 12B)
+  │  NL→Rego translation if policy_update present (Mistral 7B)
   │  Dispatches to C4 adapters
   ▼
 C3 — Policy Translation (if policy_update present)
-  │  Mistral Nemo 12B + few-shot examples → OPA/Rego rule
+  │  Mistral 7B + few-shot examples → OPA/Rego rule
   │  OPA parse validation + single retry on failure
   │  Falls back to "default deny = true" on double failure (fail-closed)
   │  → published to t53.policy_updates
@@ -264,9 +264,11 @@ All queues are durable and pre-declared via `infra/rabbitmq/definitions.json` at
 
 | Component | Model | Purpose | Frequency |
 |---|---|---|---|
-| C1 | Mistral 7B | Field extraction from unknown/novel log formats | Low — fallback only when no deterministic parser matches |
-| C3 | Mistral Nemo 12B | NL → OPA/Rego policy rule translation | Low — only when `policy_update` field is set |
-| C5 | Mistral 7B | Semantic guardrail second-opinion for ESCALATE verdicts | Low — borderline cases only |
+| C1 | Phi-3 Mini 3.8B (`phi3:mini`) | Field extraction from unknown/novel log formats | Low — fallback only when no deterministic parser matches |
+| C3 | Mistral 7B (`mistral:7b`) | NL → OPA/Rego policy rule translation | Low — only when `policy_update` field is set |
+| C5 | Phi-3 Mini 3.8B (`phi3:mini`) | Semantic guardrail second-opinion for ESCALATE verdicts | Low — borderline cases only |
+
+**Model split rationale:** Phi-3 Mini (~3.8B params) handles short JSON extraction and binary verdict tasks — it is ~2× faster than Mistral 7B on CPU and sufficient for these structured-output tasks. Mistral 7B is retained for C3 Rego generation, which requires more complex reasoning over multi-line code output. Both models are pulled by `ollama-init` at stack startup. `OLLAMA_KEEP_ALIVE=-1` keeps both resident in RAM to avoid per-request cold-start overhead.
 
 **C2 (reasoning loop) has been removed.** Reasoning is T5.4's responsibility.
 
@@ -348,7 +350,7 @@ Produced by T5.4 (GFT). Consumed by T5.3 / C5. Published on `t53.action_requests
 
 **Convention for `policy_update`:**
 - Short, directive natural-language sentence describing the desired ZTA policy change.
-- C3 compiles the NL to OPA/Rego via Mistral Nemo 12B and publishes the result on `t53.policy_updates`. The downstream consumer of the compiled policy is currently open — T5.5 was previously assumed but ruled out at the July 1 KOM (T5.5 is scoped around blueprint and scenario collection, not policy enforcement).
+- C3 compiles the NL to OPA/Rego via Mistral 7B and publishes the result on `t53.policy_updates`. The downstream consumer of the compiled policy is currently open — T5.5 was previously assumed but ruled out at the July 1 KOM (T5.5 is scoped around blueprint and scenario collection, not policy enforcement).
 - Example tested against the current stack: `"Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"`.
 - Distinct from the `update_zt_policy` action verb — see the C4 Adapter Vocabulary section.
 
@@ -388,7 +390,7 @@ Produced by C5 pre-execution. Internal only — not published to the broker; use
 }
 ```
 
-The five deterministic gates ① confidence, ② protected-IP allowlist, ③ proportionality, ④ `isolate_plc` safe-state, ⑤ OT ZTA zone scope. `ESCALATE` triggers a Mistral 7B semantic second-opinion; the LLM output resolves to `APPROVED` when proportionate or `REJECTED` otherwise.
+The five deterministic gates ① confidence, ② protected-IP allowlist, ③ proportionality, ④ `isolate_plc` safe-state, ⑤ OT ZTA zone scope. `ESCALATE` triggers a Phi-3 Mini 3.8B semantic second-opinion; the LLM output resolves to `APPROVED` when proportionate or `REJECTED` otherwise.
 
 ---
 
