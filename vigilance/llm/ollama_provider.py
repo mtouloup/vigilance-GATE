@@ -44,6 +44,9 @@ Field-specific rules:
 - "severity": must be one of LOW, MEDIUM, HIGH, CRITICAL. Return null if not inferable.
 - "ot_protocol": only for industrial OT protocols (OPC-UA, Modbus, DNP3, IEC-104). Return null
   for telecom protocols (SS7, Diameter, SIP) or any non-OT protocol.
+- "scada_zone": extract zone/segment identifiers (e.g. "zone-B", "Zone-A", "segment-3") as a
+  standalone value, even if they appear embedded in a PLC name or location string.
+- "plc_id": the PLC device identifier only — strip any zone/segment suffix before returning.
 - "ot_safety_flag": true only if the text explicitly mentions a safety system or OT safety risk.
 - All numeric fields (count, nodes_affected, fraud_score): return null if not present in text.
 - Cross-pilot fields: return null for fields that belong to a different sector than the event.
@@ -87,13 +90,17 @@ class OllamaLLMProvider:
         self._timeout = timeout
 
     def complete(self, system_prompt: str, messages: list[dict]) -> str:
-        """Run a chat completion using the reasoning model (mistral-nemo).
+        """Run a chat completion using the reasoning model.
 
         Returns free-form text — no JSON constraint is applied, so callers
         (e.g. PolicyTranslator) can receive Rego, natural language, or any
         other non-JSON output format.
         """
-        return self._chat(self.reasoning_model, system_prompt, messages, response_format=None)
+        # Rego rules are typically 10-25 lines; 512 tokens is a safe ceiling.
+        return self._chat(
+            self.reasoning_model, system_prompt, messages,
+            response_format=None, num_predict=512, num_ctx=2048,
+        )
 
     def semantic_check(self, system_prompt: str, messages: list[dict]) -> str:
         """Run a semantic guardrail review using the fast model (mistral:7b).
@@ -106,7 +113,11 @@ class OllamaLLMProvider:
             + "\n\nRESPONSE FORMAT: respond with valid JSON only.\n"
             '{"semantic_verdict": "APPROVE"|"REJECT", "reason": "<short explanation>"}'
         )
-        return self._chat(self.fast_model, semantic_system, messages, response_format="json")
+        # Verdict JSON is ~30 tokens; 128 is a safe ceiling, keeps inference fast.
+        return self._chat(
+            self.fast_model, semantic_system, messages,
+            response_format="json", num_predict=128, num_ctx=1024,
+        )
 
     def extract_fields(self, raw_text: str, fields: list[str]) -> dict:
         """Extract structured fields from raw text using the fast model (mistral:7b).
@@ -120,7 +131,11 @@ class OllamaLLMProvider:
             f"From this security event:\n{raw_text[:2000]}"
         )
         messages = [{"role": "user", "content": user_content}]
-        raw_response = self._chat(self.fast_model, system, messages, response_format="json")
+        # Extraction JSON is typically <200 tokens; 256 cap keeps the model on-task.
+        raw_response = self._chat(
+            self.fast_model, system, messages,
+            response_format="json", num_predict=256, num_ctx=1024,
+        )
 
         try:
             result = json.loads(raw_response)
@@ -137,6 +152,8 @@ class OllamaLLMProvider:
         system_prompt: str,
         messages: list[dict],
         response_format: str | None = None,
+        num_predict: int = 512,
+        num_ctx: int = 2048,
     ) -> str:
         """POST to /api/chat and return the assistant message content.
 
@@ -144,6 +161,11 @@ class OllamaLLMProvider:
             response_format: Pass ``"json"`` to engage Ollama's constrained JSON
                 sampler (only for methods that truly need JSON output).
                 Pass ``None`` (default) for free-form output such as Rego rules.
+            num_predict: Maximum tokens to generate. Tune per task — short
+                extraction tasks can use 128–256; Rego generation needs ~512.
+                Keeping this low is the single biggest CPU-latency lever.
+            num_ctx: Context window size. 1024 is sufficient for extraction
+                prompts; 2048 for Rego generation.
         """
         import requests
 
@@ -151,7 +173,7 @@ class OllamaLLMProvider:
             "model": model,
             "messages": [{"role": "system", "content": system_prompt}] + messages,
             "stream": False,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": num_ctx},
         }
         if response_format is not None:
             payload["format"] = response_format
