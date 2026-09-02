@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Models match the T5.3 spec exactly
 FAST_MODEL = "mistral:7b"        # C1 fallback parser, C5 semantic guardrail
-REASONING_MODEL = "mistral-nemo" # C2 agentic loop, C3 NL→Rego policy translation
+REASONING_MODEL = "mistral:7b"   # C3 NL→Rego policy translation (same model as FAST_MODEL; nemo for higher quality but ~3× slower)
 
 # Injected into every agentic-loop system prompt so the model returns parseable JSON
 _AGENTIC_JSON_INSTRUCTION = """
