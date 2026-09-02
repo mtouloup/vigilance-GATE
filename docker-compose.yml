@@ -49,6 +49,9 @@ services:
     container_name: vigilance-ollama
     ports:
       - "11434:11434"   # Ollama REST API
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"        # keep models resident in RAM indefinitely — eliminates reload on first post-idle request
+      OLLAMA_NUM_THREADS: "8"        # pin CPU thread count (matches auto-detected value; explicit avoids re-detection overhead)
     volumes:
       - ${OLLAMA_MODELS_DIR:-ollama_data}:/root/.ollama
     restart: unless-stopped
@@ -77,6 +80,7 @@ services:
         echo 'Waiting for Ollama API...' &&
         until ollama list > /dev/null 2>&1; do sleep 2; done &&
         echo 'Ollama ready. Checking models...' &&
+        ollama pull phi3:mini &&
         ollama pull mistral:7b &&
         echo 'Models ready.'
       "

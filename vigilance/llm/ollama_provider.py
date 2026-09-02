@@ -7,8 +7,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Models match the T5.3 spec exactly
-FAST_MODEL = "mistral:7b"        # C1 fallback parser, C5 semantic guardrail
-REASONING_MODEL = "mistral:7b"   # C3 NL→Rego policy translation (same model as FAST_MODEL; nemo for higher quality but ~3× slower)
+FAST_MODEL = "phi3:mini"         # C1 fallback parser, C5 semantic guardrail — 3.8B params, ~2× faster than 7B on CPU
+REASONING_MODEL = "mistral:7b"   # C3 NL→Rego policy translation — 7B needed for Rego quality
 
 # Injected into every agentic-loop system prompt so the model returns parseable JSON
 _AGENTIC_JSON_INSTRUCTION = """
