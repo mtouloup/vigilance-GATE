@@ -187,10 +187,10 @@ docker compose up --build
 On **first run** `ollama-init` downloads `mistral:7b` and `mistral-nemo` into the `ollama_data`
 Docker volume. Subsequent runs reuse the cached models instantly.
 
-Startup order enforced by healthchecks:
+Startup order:
 1. `rabbitmq` → healthy (queues pre-declared from `infra/rabbitmq/definitions.json`)
-2. `ollama` → healthy (API responding)
-3. `ollama-init` → exits 0 (models pulled)
+2. `ollama` → started
+3. `ollama-init` → polls until Ollama API responds, then pulls models, then exits 0
 4. `vigilance-gate` → starts, listens on `pilot.events.raw` and serves REST API on port 8000
 
 | Container | Role |
