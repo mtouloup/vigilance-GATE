@@ -41,6 +41,9 @@ services:
       start_period: 15s
 
   # ── Ollama LLM server ─────────────────────────────────────────────────────────
+  # No persistent healthcheck — readiness polling is handled once by ollama-init.
+  # This avoids repeated HEAD / + GET /api/tags calls (and their GIN access logs)
+  # appearing every N seconds for the lifetime of the stack.
   ollama:
     image: ollama/ollama:latest
     container_name: vigilance-ollama
@@ -48,12 +51,6 @@ services:
       - "11434:11434"   # Ollama REST API
     volumes:
       - ${OLLAMA_MODELS_DIR:-ollama_data}:/root/.ollama
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 20s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
     restart: unless-stopped
     # ── GPU (NVIDIA) — uncomment to enable GPU acceleration ───────────────────
     # deploy:
@@ -67,6 +64,7 @@ services:
   # ── Model initialiser (runs once, then exits) ─────────────────────────────────
   # Pulls mistral:7b and mistral-nemo if not already present in the volume.
   # Idempotent — does not re-download models that are already cached.
+  # Polls until Ollama's API responds before pulling (replaces the removed healthcheck).
   ollama-init:
     image: ollama/ollama:latest
     container_name: vigilance-ollama-init
@@ -76,14 +74,15 @@ services:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: >
       sh -c "
-        echo 'Checking models...' &&
+        echo 'Waiting for Ollama API...' &&
+        until ollama list > /dev/null 2>&1; do sleep 2; done &&
+        echo 'Ollama ready. Checking models...' &&
         ollama pull mistral:7b &&
         ollama pull mistral-nemo &&
         echo 'Models ready.'
       "
     depends_on:
-      ollama:
-        condition: service_healthy
+      - ollama
     restart: "no"
 
   # ── T5.3 Agentic Wrapper Framework ───────────────────────────────────────────
