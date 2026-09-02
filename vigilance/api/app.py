@@ -208,6 +208,32 @@ def submit_event(body: RawEventRequest) -> JSONResponse:
     )
 
 
+@app.get("/api/v1/events", tags=["Events"])
+def list_events(pilot: str | None = None, limit: int = 100) -> JSONResponse:
+    """List ingested CanonicalEvents from the SQLite store.
+
+    Query params:
+      ?pilot=INDUSTRY_4   filter by pilot
+      ?limit=50           max records returned (default 100)
+    """
+    pipeline = get_pipeline()
+    events = pipeline._db.list_events(pilot=pilot, limit=limit)
+    return JSONResponse(
+        status_code=200,
+        content={"total": len(events), "events": events},
+    )
+
+
+@app.get("/api/v1/events/{event_id}", tags=["Events"])
+def get_event(event_id: str) -> JSONResponse:
+    """Retrieve a single CanonicalEvent by its event_id."""
+    pipeline = get_pipeline()
+    event = pipeline._db.get_event(event_id)
+    if event is None:
+        raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found.")
+    return JSONResponse(status_code=200, content=event)
+
+
 @app.get("/api/v1/results/{request_id}", tags=["Results"])
 def get_result(request_id: str) -> JSONResponse:
     """Retrieve the ExecutionResult for a completed ActionRequest.
