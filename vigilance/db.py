@@ -168,6 +168,31 @@ class Database:
                 ),
             )
 
+    def list_action_requests(self, pilot: str | None = None, limit: int = 100) -> list[dict]:
+        with self._connect() as conn:
+            if pilot:
+                rows = conn.execute(
+                    "SELECT * FROM action_requests WHERE pilot = ? ORDER BY received_at DESC LIMIT ?",
+                    (pilot, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM action_requests ORDER BY received_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [
+            {
+                "request_id": r["request_id"],
+                "event_id": r["event_id"],
+                "pilot": r["pilot"],
+                "actions": json.loads(r["actions"]),
+                "policy_update": r["policy_update"],
+                "agent_confidence": r["agent_confidence"],
+                "received_at": r["received_at"],
+            }
+            for r in rows
+        ]
+
     def get_action_request(self, request_id: str) -> dict | None:
         with self._connect() as conn:
             row = conn.execute(
