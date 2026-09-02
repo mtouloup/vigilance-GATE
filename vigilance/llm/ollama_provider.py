@@ -44,6 +44,9 @@ Field-specific rules:
 - "severity": must be one of LOW, MEDIUM, HIGH, CRITICAL. Return null if not inferable.
 - "ot_protocol": only for industrial OT protocols (OPC-UA, Modbus, DNP3, IEC-104). Return null
   for telecom protocols (SS7, Diameter, SIP) or any non-OT protocol.
+- "scada_zone": extract zone/segment identifiers (e.g. "zone-B", "Zone-A", "segment-3") as a
+  standalone value, even if they appear embedded in a PLC name or location string.
+- "plc_id": the PLC device identifier only — strip any zone/segment suffix before returning.
 - "ot_safety_flag": true only if the text explicitly mentions a safety system or OT safety risk.
 - All numeric fields (count, nodes_affected, fraud_score): return null if not present in text.
 - Cross-pilot fields: return null for fields that belong to a different sector than the event.
