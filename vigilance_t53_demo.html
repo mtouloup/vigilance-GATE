@@ -1,0 +1,1957 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found]){display:none!important}</style></head><body>
+<title>VIGILANCE T5.3 Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header { background: linear-gradient(135deg,#1a1f2e,#161b27); border-bottom:1px solid #21262d; padding:14px 36px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+  .badge { background:#1f6feb; color:#fff; font-size:11px; font-weight:700; letter-spacing:1.4px; padding:3px 10px; border-radius:20px; text-transform:uppercase; margin-right:12px; }
+  header h1 { font-size:17px; font-weight:600; color:#c9d1d9; }
+  header .meta { font-size:12px; color:#6e7681; text-align:right; line-height:1.5; }
+
+  .arch-bar { background:#161b22; border-bottom:1px solid #21262d; padding:10px 32px; display:flex; align-items:center; gap:0; overflow-x:auto; flex-shrink:0; white-space:nowrap; }
+  .arch-box { padding:5px 13px; border-radius:6px; font-size:11px; font-weight:600; border:1px solid transparent; transition:all .25s; opacity:.35; }
+  .arch-box.active-node { opacity:1; transform:scale(1.07); box-shadow:0 0 14px rgba(255,255,255,.15); }
+  .arch-arrow { font-size:14px; color:#30363d; padding:0 6px; }
+  .c0{background:#1f1a00;color:#e3b341;border-color:#9e6a03;}
+  .c1{background:#0d2137;color:#58a6ff;border-color:#1f6feb;}
+  .cT4{background:#1a0d37;color:#d2a8ff;border-color:#8957e5;}
+  .c5{background:#2a0d0d;color:#f85149;border-color:#da3633;}
+  .c3{background:#0d2a1a;color:#3fb950;border-color:#238636;}
+  .c4{background:#2a1a0d;color:#ffa657;border-color:#d1842a;}
+  .cT{background:#1a1a2a;color:#a5d6ff;border-color:#6e7681;}
+  .c6{background:#1a2a0d;color:#7ee787;border-color:#3fb950;}
+
+  .layout { display:grid; grid-template-columns:260px 1fr; flex:1; min-height:0; overflow:hidden; }
+  .sidebar { background:#161b22; border-right:1px solid #21262d; padding:0; display:flex; flex-direction:column; gap:2px; overflow-y:auto; }
+  .sidebar-title { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#6e7681; padding:0 18px 10px; }
+  .step-btn { display:flex; align-items:center; gap:10px; padding:11px 18px; cursor:pointer; border:none; background:none; color:#8b949e; font-size:13px; text-align:left; width:100%; transition:all .2s; border-left:3px solid transparent; }
+  .step-btn:hover{background:#1f262f;color:#c9d1d9;}
+  .step-btn.active{background:#1f2937;color:#58a6ff;border-left-color:#1f6feb;font-weight:600;}
+  .step-btn.done{color:#3fb950;border-left-color:#238636;}
+  .step-btn .sn { width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:#21262d;flex-shrink:0; }
+  .step-btn.active .sn{background:#1f6feb;color:#fff;}
+  .step-btn.done .sn{background:#238636;color:#fff;}
+  .live-dot { width:7px;height:7px;border-radius:50%;background:#f85149;display:inline-block;margin-left:auto;box-shadow:0 0 5px #f85149;animation:pulse 1.5s infinite; }
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+
+  .main { display:flex; flex-direction:column; overflow:hidden; }
+  .step-panel { flex:1; padding:26px 36px; overflow-y:auto; display:none; }
+  .step-panel.visible { display:block; }
+
+  .step-header { display:flex; align-items:flex-start; gap:14px; margin-bottom:22px; }
+  .step-icon { width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0; }
+  .step-label { font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px; }
+  .step-title { font-size:20px;font-weight:700;color:#c9d1d9; }
+  .step-subtitle { font-size:12px;color:#6e7681;margin-top:3px; }
+
+  .card { background:#161b22;border:1px solid #21262d;border-radius:10px;padding:18px 22px;margin-bottom:14px; }
+  .card-title { font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#6e7681;margin-bottom:10px;display:flex;align-items:center;gap:7px; }
+  .dot{width:7px;height:7px;border-radius:50%;}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+
+  .narrative{font-size:13.5px;line-height:1.75;color:#c9d1d9;}
+  .highlight{background:#1f2937;border-left:3px solid #1f6feb;padding:9px 14px;border-radius:0 6px 6px 0;margin:10px 0;font-size:13px;}
+
+  pre{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:14px 16px;font-size:11.5px;line-height:1.7;overflow-x:auto;color:#e6edf3;font-family:'Cascadia Code','Fira Code',monospace;white-space:pre-wrap;word-break:break-word;}
+  pre .key{color:#79c0ff;} pre .str{color:#a5d6ff;} pre .num{color:#79c0ff;} pre .kw{color:#ff7b72;} pre .cmt{color:#8b949e;font-style:italic;} pre .ok{color:#3fb950;}
+
+  textarea.req-body {
+    display:block; width:100%; background:#0d1117; border:1px solid #21262d; border-radius:8px;
+    padding:14px 16px; font-size:11.5px; line-height:1.7; color:#e6edf3;
+    font-family:'Cascadia Code','Fira Code',monospace; resize:vertical; min-height:110px;
+    outline:none; transition:border-color .2s; white-space:pre; overflow-x:auto;
+  }
+  textarea.req-body:focus { border-color:#1f6feb; box-shadow:0 0 0 2px rgba(31,111,235,.15); }
+  .req-label-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .req-edit-hint { font-size:10px; color:#6e7681; font-style:italic; }
+
+  .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px;margin-bottom:4px;}
+  .tag-blue{background:#1f3a5c;color:#58a6ff;} .tag-green{background:#1a3a22;color:#3fb950;} .tag-red{background:#3a1a1a;color:#f85149;} .tag-purple{background:#2a1a4a;color:#d2a8ff;} .tag-orange{background:#3a2210;color:#ffa657;} .tag-yellow{background:#3a2e00;color:#e3b341;}
+
+  .tl{display:flex;flex-direction:column;gap:0;}
+  .tl-item{display:flex;gap:14px;padding-bottom:16px;position:relative;}
+  .tl-item:not(:last-child)::before{content:'';position:absolute;left:13px;top:28px;width:2px;bottom:0;background:#21262d;}
+  .tl-dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;z-index:1;}
+  .tl-title{font-size:13.5px;font-weight:600;color:#c9d1d9;margin-bottom:3px;}
+  .tl-desc{font-size:12.5px;color:#8b949e;line-height:1.6;}
+
+  .verdict{border-radius:8px;padding:12px 18px;font-size:14px;font-weight:700;display:flex;align-items:center;gap:10px;margin-top:10px;}
+  .verdict.approved{background:#1a3a22;border:1px solid #238636;color:#3fb950;}
+  .verdict.rejected{background:#3a1a1a;border:1px solid #da3633;color:#f85149;}
+
+  .live-section { background:#0d1117; border:1px solid #21262d; border-radius:10px; margin-top:6px; overflow:hidden; }
+  .live-header { display:flex; align-items:center; gap:10px; padding:12px 18px; background:#161b22; border-bottom:1px solid #21262d; }
+  .live-badge { background:#2a0d0d; color:#f85149; border:1px solid #da3633; border-radius:12px; padding:2px 9px; font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; }
+  .live-endpoint { font-size:12px; color:#8b949e; font-family:monospace; }
+  .run-btn { margin-left:auto; padding:6px 16px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:700; background:#1f6feb; color:#fff; transition:all .2s; display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .run-btn:hover{background:#388bfd;}
+  .run-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .live-body { padding:14px 18px; }
+  .api-req-label { font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#6e7681; margin-bottom:6px; }
+  .api-resp { display:none; }
+  .api-resp.visible { display:block; margin-top:12px; }
+  .resp-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .resp-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:4px; }
+  .resp-ok  { background:#1a3a22; color:#3fb950; }
+  .resp-err { background:#3a1a1a; color:#f85149; }
+  .spinner { display:none; align-items:center; gap:8px; color:#8b949e; font-size:12px; margin-top:10px; }
+  .spinner.visible { display:flex; }
+  .spin { width:16px;height:16px;border:2px solid #30363d;border-top-color:#1f6feb;border-radius:50%;animation:spin .7s linear infinite; }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .collapse-btn { margin-left:auto; background:none; border:1px solid #30363d; color:#6e7681; border-radius:4px; padding:2px 9px; font-size:10px; cursor:pointer; white-space:nowrap; }
+  .collapse-btn:hover { background:#21262d; color:#c9d1d9; }
+
+  .nav-footer{border-top:1px solid #21262d;padding:14px 36px;display:flex;justify-content:space-between;align-items:center;background:#161b22;flex-shrink:0;}
+  .nav-btn{padding:8px 20px;border-radius:7px;font-size:13.5px;font-weight:600;cursor:pointer;border:none;transition:all .2s;}
+  .nav-btn.primary{background:#1f6feb;color:#fff;} .nav-btn.primary:hover{background:#388bfd;}
+  .nav-btn.secondary{background:#21262d;color:#c9d1d9;} .nav-btn.secondary:hover{background:#30363d;}
+  .nav-btn:disabled{opacity:.3;cursor:not-allowed;}
+  .progress-text{font-size:12px;color:#6e7681;}
+
+  .info-box{background:#0d2137;border:1px solid #1f6feb;border-radius:8px;padding:12px 16px;font-size:12.5px;color:#a5d6ff;line-height:1.6;margin-top:10px;}
+  .warn-box{background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:12px 16px;font-size:12.5px;color:#e3b341;line-height:1.6;margin-top:10px;}
+  .success-box{background:#0d2a1a;border:1px solid #238636;border-radius:8px;padding:9px 14px;font-size:12.5px;color:#3fb950;line-height:1.6;margin-top:8px;}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  td,th{padding:7px 12px;text-align:left;border-bottom:1px solid #21262d;}
+  th{color:#6e7681;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.8px;}
+  tr:last-child td{border-bottom:none;}
+
+  .new-badge{background:#0d2a1a;border:1px solid #238636;color:#3fb950;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-left:6px;}
+
+  /* Scenario picker */
+  .scenario-picker { padding:12px 18px 10px; border-bottom:1px solid #21262d; }
+  .scenario-picker-label { font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:#6e7681; margin-bottom:7px; }
+  .scenario-btn { display:block; width:100%; text-align:left; padding:6px 10px; border-radius:6px; border:1px solid #30363d; background:none; color:#6e7681; font-size:11.5px; cursor:pointer; transition:all .15s; margin-bottom:4px; }
+  .scenario-btn:last-child { margin-bottom:0; }
+  .scenario-btn.active { background:#1f2937; border-color:#1f6feb; color:#58a6ff; font-weight:600; }
+  .scenario-btn.todo { opacity:.45; cursor:not-allowed; }
+  .scenario-btn.todo .todo-tag { display:inline-block; margin-left:6px; padding:0 6px; border-radius:8px; font-size:9px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; background:#21262d; color:#6e7681; border:1px solid #30363d; vertical-align:middle; }
+
+  /* event_id source selector */
+  .eid-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-wrap:wrap; }
+  .eid-row-label { font-size:10px; color:#6e7681; font-weight:700; letter-spacing:.8px; text-transform:uppercase; white-space:nowrap; }
+  .eid-pill { padding:2px 11px; border-radius:10px; font-size:10px; font-weight:700; cursor:pointer; border:1px solid #30363d; background:none; color:#6e7681; transition:all .15s; }
+  .eid-pill:hover:not(:disabled) { background:#21262d; color:#c9d1d9; }
+  .eid-pill:disabled { opacity:.28; cursor:not-allowed; }
+  .eid-pill.active-known { background:#0d2a1a; border-color:#238636; color:#3fb950; }
+  .eid-pill.active-llm   { background:#2a1a00;  border-color:#9e6a03; color:#e3b341; }
+
+  .param-input {
+    background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6edf3;
+    font-family:'Cascadia Code','Fira Code',monospace; font-size:11px; padding:3px 8px;
+    outline:none; transition:border-color .2s; vertical-align:middle;
+  }
+  .param-input:focus { border-color:#1f6feb; }
+  .param-input::placeholder { color:#4a505a; }
+</style>
+
+<header>
+  <div style="display:flex;align-items:center;">
+    <span class="badge">VIGILANCE · GAP-101249737</span>
+    <h1>T5.3 Agentic Wrapper Framework — Live Workflow Demo</h1>
+  </div>
+  <div class="meta">WP5 Partners Review · October 2026<br>
+    <span style="color:#3fb950;font-weight:600;">● LIVE</span> — connected to localhost:8000
+  </div>
+</header>
+
+<div class="arch-bar">
+  <div class="arch-box c0" id="n0">🔴 Raw Alert</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box c1" id="n1">C1 Ingestion</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box cT4" id="nT4">T5.4 GFT ↔</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box c5" id="n5">C5 Safety Gate</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box c3" id="n3">C3 Execution</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box c4" id="n4">C4 Adapters</div>
+  <span class="arch-arrow">→</span>
+  <div class="arch-box cT" id="nT">🛡️ Pilot Tools</div>
+  <span class="arch-arrow" style="margin-left:18px;color:#6e7681;">│</span>
+  <div class="arch-box c6" id="n6" style="margin-left:8px;">C6 Profiles ⊗</div>
+</div>
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="scenario-picker">
+    <div class="scenario-picker-label">Pilot Scenario</div>
+    <button class="scenario-btn active">Siemens — INDUSTRY_4</button>
+    <button class="scenario-btn todo" disabled>OTE — TELECOM <span class="todo-tag">TODO</span></button>
+    <button class="scenario-btn todo" disabled>MARITIME Sector <span class="todo-tag">TODO</span></button>
+    <button class="scenario-btn todo" disabled>FINANCE Sector <span class="todo-tag">TODO</span></button>
+  </div>
+  <div class="sidebar-title" style="margin-top:10px;">Scenario: Siemens OT Anomaly</div>
+  <button class="step-btn active" onclick="goTo(0)" id="sb0"><span class="sn">0</span> The Incident <span class="live-dot"></span></button>
+  <button class="step-btn" onclick="goTo(1)" id="sb1"><span class="sn">1</span> C1 — Ingestion <span class="live-dot"></span></button>
+  <button class="step-btn" onclick="goTo(2)" id="sb2"><span class="sn">2</span> Store ActionRequest <span class="live-dot"></span></button>
+  <button class="step-btn" onclick="goTo(3)" id="sb3"><span class="sn">3</span> C5 — Guardrail <span class="live-dot"></span></button>
+  <div style="padding:8px 18px 4px;margin-top:4px;border-top:1px solid #21262d;">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#3fb950;opacity:.7;">— or skip steps 2 & 3 —</div>
+  </div>
+  <button class="step-btn" onclick="goTo(4)" id="sb4"><span class="sn" style="background:#238636;color:#fff;font-size:13px;">⚡</span> Full Pipeline (T5.4) <span class="live-dot" style="background:#3fb950;box-shadow:0 0 5px #3fb950;"></span></button>
+  <div style="padding:4px 18px 0;"><div style="border-top:1px solid #21262d;"></div></div>
+  <button class="step-btn" onclick="goTo(5)" id="sb5"><span class="sn" style="background:#2a1a0d;color:#ffa657;font-size:12px;">📤</span> C4 — Tool Dispatch <span class="live-dot" style="background:#ffa657;box-shadow:0 0 5px #ffa657;"></span></button>
+  <button class="step-btn" onclick="goTo(6)" id="sb6"><span class="sn">4</span> Result & Audit <span class="live-dot"></span></button>
+  <button class="step-btn" onclick="goTo(7)" id="sb7"><span class="sn">★</span> Cross-Pilot Transfer</button>
+  <div style="padding:8px 18px 4px;margin-top:6px;border-top:1px solid #21262d;">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#6e7681;opacity:.7;">Query & Inspect</div>
+  </div>
+  <button class="step-btn" onclick="goTo(8)" id="sb8"><span class="sn" style="font-size:12px;">🔍</span> API Explorer</button>
+  <button class="step-btn" onclick="goTo(9)" id="sb9"><span class="sn" style="font-size:12px;">📋</span> OPA / Rego</button>
+</aside>
+
+<main class="main">
+
+<!-- ── STEP 0 ── -->
+<div class="step-panel visible" id="panel0">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a1500;">🔴</div>
+    <div>
+      <div class="step-label" style="color:#e3b341;">Step 0 — The Incident</div>
+      <div class="step-title">OT Anomaly — Unauthorised OPC-UA Command on Siemens WWTP SCADA</div>
+      <div class="step-subtitle">Pilot: Siemens — Romania · Sector: INDUSTRY_4 · MITRE ICS T0855 Unauthorized Command Message</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>What happened</div>
+      <div class="narrative">The Siemens SCADA sensor on the Romanian <strong>wastewater treatment plant (WWTP)</strong> detects an <strong>unauthorised OPC-UA command message</strong> from <code style="color:#ff7b72;">10.40.3.77</code> (Zone-B) attempting to override a safety interlock on <code>PLC-WWTP-RO</code> (Zone-A). MITRE ICS ATT&CK technique <strong>T0855 — Unauthorized Command Message</strong>.
+        <div class="highlight">This alert arrives on RabbitMQ topic <code>pilot.events.raw</code>. The INDUSTRY_4 profile's OT safety flag activates two additional C5 guardrail checks (④ and ⑤) beyond the standard three.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#f85149;"></span>Threat snapshot</div>
+      <div style="font-size:13px;color:#8b949e;line-height:2;">
+        <div>Source: <strong style="color:#f85149;">10.40.3.77</strong> (Zone-B)</div>
+        <div>Target PLC: <strong>PLC-WWTP-RO</strong> (Zone-A)</div>
+        <div>MITRE ICS: <span class="tag tag-red">T0855</span> Unauthorized Command</div>
+        <div>Protocol: <span class="tag tag-orange">OPC-UA</span></div>
+        <div>Severity: <span class="tag tag-red">CRITICAL</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:0;">
+    <div class="card-title"><span class="dot" style="background:#6e7681;"></span>Abbreviations</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0 24px;">
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#6e7681;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #21262d;">Project</div>
+        <table style="font-size:12px;">
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">VIGILANCE</td><td style="color:#8b949e;border:none;">Horizon Europe GAP-101249737</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">T5.3</td><td style="color:#8b949e;border:none;">This component — Agentic Wrapper Framework</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">T5.4</td><td style="color:#8b949e;border:none;">GFT's reasoning &amp; orchestration agent</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">INDUSTRY_4</td><td style="color:#8b949e;border:none;">Canonical sector ID for Siemens Romania</td></tr>
+        </table>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#6e7681;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #21262d;">T5.3 Components</div>
+        <table style="font-size:12px;">
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#58a6ff;border:none;">C1</td><td style="color:#8b949e;border:none;">Ingestion &amp; Normalisation</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#f85149;border:none;">C5</td><td style="color:#8b949e;border:none;">Safety Guardrail</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#3fb950;border:none;">C3</td><td style="color:#8b949e;border:none;">Execution &amp; Policy Translation</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#ffa657;border:none;">C4</td><td style="color:#8b949e;border:none;">Tool Adapter Layer (12 plugins)</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#7ee787;border:none;">C6</td><td style="color:#8b949e;border:none;">Sector Profile Manager</td></tr>
+        </table>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#6e7681;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #21262d;">Technical / Domain</div>
+        <table style="font-size:12px;">
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">OT</td><td style="color:#8b949e;border:none;">Operational Technology (industrial hardware)</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">PLC</td><td style="color:#8b949e;border:none;">Programmable Logic Controller</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">SCADA</td><td style="color:#8b949e;border:none;">Supervisory Control and Data Acquisition</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">OPC-UA</td><td style="color:#8b949e;border:none;">Dominant ICS machine-to-machine protocol</td></tr>
+          <tr><td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:700;color:#c9d1d9;border:none;">WWTP</td><td style="color:#8b949e;border:none;">Wastewater Treatment Plant — Siemens RO pilot</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section">
+    <div class="live-header">
+      <span class="live-badge">● Live</span>
+      <span class="live-endpoint">GET /api/v1/health — verify T5.3 is running</span>
+      <button class="run-btn" onclick="runHealth()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Request</div>
+      <pre>GET http://localhost:8000/api/v1/health</pre>
+      <div class="spinner" id="spin-health"><div class="spin"></div> Checking health…</div>
+      <div class="api-resp" id="resp-health">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-health-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-health-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">Response</div>
+        <pre id="resp-health-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-top:10px;border-color:#1f6feb;">
+    <div class="live-header" style="background:#0d2137;border-bottom-color:#1f6feb;">
+      <span class="live-badge" style="background:#0d2137;color:#58a6ff;border-color:#1f6feb;">● Live <span class="new-badge">NEW</span></span>
+      <span class="live-endpoint">GET /api/v1/formats — C1 parser registry in priority order</span>
+      <button class="run-btn" onclick="runFormats()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Returns the 5 supported log formats, parser priority, detection signals, and examples</div>
+      <div class="spinner" id="spin-formats"><div class="spin"></div> Fetching formats…</div>
+      <div class="api-resp" id="resp-formats">
+        <div class="resp-header"><span class="resp-badge resp-ok">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-formats-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">Response</div>
+        <pre id="resp-formats-body"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 1 ── -->
+<div class="step-panel" id="panel1">
+  <div class="step-header">
+    <div class="step-icon" style="background:#0d2137;">🔵</div>
+    <div>
+      <div class="step-label" style="color:#58a6ff;">Step 1 — Component C1</div>
+      <div class="step-title">Event Ingestion & Normalisation</div>
+      <div class="step-subtitle">OT JSON → CanonicalEvent · Parser: deterministic OT JSON · LLM: not invoked on this path</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#58a6ff;"></span>C1 processing pipeline</div>
+    <div class="tl">
+      <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">1a</div><div><div class="tl-title">Consumer polls <code>pilot.events.raw</code></div><div class="tl-desc">Picks up the raw OT JSON payload.</div></div></div>
+      <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">1b</div><div><div class="tl-title">Schema detector → <span style="color:#3fb950;">OT JSON identified ✓ deterministic parser</span></div><div class="tl-desc">Known format → zero LLM cost, &lt;200ms. If no schema matches, C1 falls back to Mistral 7B (see yellow demo below).</div></div></div>
+      <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">1c</div><div><div class="tl-title">C6 INDUSTRY_4 profile enrichment</div><div class="tl-desc">Populates OT extension fields: <code>plc_id</code>, <code>scada_zone</code>, <code>ot_protocol</code>. <strong style="color:#f85149;">OT safety flag: true</strong> → activates C5 checks ④ and ⑤.</div></div></div>
+      <div class="tl-item"><div class="tl-dot" style="background:#238636;">1d</div><div><div class="tl-title">CanonicalEvent stored in SQLite + published to <code>t53.canonical_events</code></div><div class="tl-desc">Response now includes the full <code>canonical_event</code> object. T5.4 (GFT) consumes the broker topic.</div></div></div>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#238636;">
+    <div class="live-header" style="background:#0d2a1a;border-bottom-color:#238636;">
+      <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">● Live</span>
+      <span class="live-endpoint">POST /api/v1/events — <strong style="color:#3fb950;">known OT JSON format → deterministic parser, zero LLM</strong></span>
+      <button class="run-btn" style="background:#238636;" onclick="runEvent()" id="btn-event">▶ Submit (no LLM)</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — edit freely, then hit Submit</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-event">{
+  "raw": {
+    "plc": "PLC-WWTP-RO",
+    "line": "WWTP-AERATION",
+    "protocol": "OPC-UA",
+    "anomaly": "register_write_out_of_range",
+    "severity": "CRITICAL"
+  },
+  "description": "Siemens WWTP OT anomaly — WP5 partner demo"
+}</textarea>
+      <div class="spinner" id="spin-event"><div class="spin"></div> Submitting to T5.3…</div>
+      <div class="api-resp" id="resp-event">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-event-badge">202 Accepted</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-event-time"></span></div>
+        <div id="canonical-highlights" style="display:none;margin:10px 0;grid-template-columns:repeat(4,1fr);gap:8px;"></div>
+        <div class="api-req-label" style="margin-top:8px;">Full API response (now includes canonical_event)</div>
+        <pre id="resp-event-body"></pre>
+        <div id="ce-section" style="display:none;margin-top:10px;">
+          <div class="api-req-label" style="display:flex;align-items:center;gap:8px;">
+            <span style="background:#0d2a1a;border:1px solid #238636;color:#3fb950;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;">canonical_event</span>
+            published to <code>t53.canonical_events</code> + stored in SQLite
+          </div>
+          <pre id="resp-ce-body" style="border-color:#238636;margin-top:6px;"></pre>
+        </div>
+        <div class="success-box" id="event-id-box" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-top:10px;border-color:#9e6a03;">
+    <div class="live-header" style="background:#2a1a00;border-bottom-color:#9e6a03;">
+      <span class="live-badge" style="background:#2a1a00;color:#e3b341;border-color:#9e6a03;">● Live</span>
+      <span class="live-endpoint">POST /api/v1/events — <strong style="color:#e3b341;">unknown format → Mistral 7B LLM fallback invoked</strong></span>
+      <button class="run-btn" style="background:#9e6a03;" onclick="runEventUnknown()" id="btn-event-unknown">▶ Submit (LLM path)</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — free-text log (no recognised schema) — edit freely</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-event-unknown" style="min-height:90px;">{
+  "raw": "CRITICAL 2026-07-28T09:18:02Z sensor-node-7 process anomaly: aeration pump command rejected by safety relay — source 10.40.3.77 attempted register override on WWTP zone-B PLC, interlock bypass flagged",
+  "description": "Free-text log — unknown format, LLM fallback demo"
+}</textarea>
+      <div class="info-box" style="margin-top:6px;font-size:12px;">No schema match → C1 calls Mistral 7B to extract fields. Expect 20–60s latency on CPU.</div>
+      <div class="spinner" id="spin-event-unknown"><div class="spin"></div> <span id="spin-event-unknown-msg">C1 schema detector: no match → calling Mistral 7B…</span></div>
+      <div class="api-resp" id="resp-event-unknown">
+        <div class="resp-header"><span class="resp-badge" id="resp-event-unknown-badge">202 Accepted</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-event-unknown-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">Response</div>
+        <pre id="resp-event-unknown-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:10px;font-size:12px;">Use <strong>🔍 API Explorer</strong> (sidebar) to list, filter and retrieve individual events from SQLite.</div>
+</div>
+
+<!-- ── STEP 2 ── -->
+<div class="step-panel" id="panel2">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a0d37;">🧠</div>
+    <div>
+      <div class="step-label" style="color:#d2a8ff;">Step 2 — T5.4 (GFT) Simulation</div>
+      <div class="step-title">Orchestrator Composes the ActionRequest</div>
+      <div class="step-subtitle">Showing what T5.4 produces from the canonical events received in Step 1</div>
+    </div>
+  </div>
+
+  <div id="t54-prereq" style="display:none;background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:#e3b341;">
+    ⚠️ Submit the Step 1 events first — data will populate automatically.
+  </div>
+
+  <div class="two-col">
+    <div class="card" style="border-color:#238636;">
+      <div class="card-title"><span class="dot" style="background:#3fb950;"></span>Canonical Event A — OT JSON parser (zero LLM)</div>
+      <pre id="t54-ce-known" style="font-size:11px;border-color:#1a3a22;color:#8b949e;">— run Step 1 known-format event —</pre>
+    </div>
+    <div class="card" style="border-color:#9e6a03;">
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Canonical Event B — Mistral 7B LLM path</div>
+      <pre id="t54-ce-llm" style="font-size:11px;border-color:#3a2a00;color:#8b949e;">— run Step 1 LLM-path event —</pre>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:#238636;">
+    <div class="card-title"><span class="dot" style="background:#3fb950;"></span>Simulated ActionRequest — built from live event_ids captured in Step 1</div>
+    <pre id="t54-action-req-display" style="border-color:#1a3a22;">— will populate once Step 1 events are submitted —</pre>
+    <div style="font-size:11.5px;color:#6e7681;margin-top:8px;">T5.3 now hard-rejects any <code>pilot</code> value not in the supported set (<code>TELECOM</code>, <code>INDUSTRY_4</code>, <code>MARITIME</code>, <code>FINANCE</code>). T5.4 must use the canonical sector ID — there is no silent fallback. See the Cross-Pilot step for the live rejection demo.</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 14px;background:#0d2a1a;border:1px solid #238636;border-radius:8px;">
+      <div style="width:26px;height:26px;border-radius:50%;background:#238636;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;flex-shrink:0;">→</div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#3fb950;">Published to <code>t53.action_requests</code></div>
+        <div style="font-size:12px;color:#8b949e;margin-top:2px;">T5.3 C5 Safety Gate picks it up — Step 3 ↓</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-top:4px;">
+    <div class="live-header">
+      <span class="live-badge">● Live</span>
+      <span class="live-endpoint">POST /api/v1/action-requests/submit — stores AR, returns "pending"</span>
+      <button class="run-btn" onclick="runSubmitActionRequest()" id="btn-submit-ar">▶ Submit ActionRequest</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — edit freely. event_id auto-fills from Step 1.</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-submit-ar">{
+  "request_id": "c3d4e5f6-a1b2-0987-dcba-fedcba987654",
+  "event_id": "(run Step 1 first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc", "create_incident"],
+  "policy_update": "Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours",
+  "agent_confidence": 0.87
+}</textarea>
+      <div class="spinner" id="spin-submit-ar"><div class="spin"></div> Submitting to T5.3…</div>
+      <div class="api-resp" id="resp-submit-ar">
+        <div class="resp-header">
+          <span class="resp-badge resp-ok" id="resp-submit-ar-badge">202 Accepted</span>
+          <span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-submit-ar-time"></span>
+        </div>
+        <div class="api-req-label" style="margin-top:8px;">Response</div>
+        <pre id="resp-submit-ar-body"></pre>
+        <div id="submit-ar-id-box" style="display:none;" class="success-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:10px;font-size:12px;">Use <strong>🔍 API Explorer</strong> (sidebar) to list and retrieve stored ActionRequests from SQLite.</div>
+</div>
+
+<!-- ── STEP 3 ── -->
+<div class="step-panel" id="panel3">
+  <div class="step-header">
+    <div class="step-icon" style="background:#2a0d0d;">🛡️</div>
+    <div>
+      <div class="step-label" style="color:#f85149;">Step 3 — Component C5</div>
+      <div class="step-title">C5 Guardrail — Three Possible Outcomes</div>
+      <div class="step-subtitle">POST /api/v1/action-requests/{request_id}/guardrail · pick a path to demo</div>
+    </div>
+  </div>
+
+  <div id="guardrail-prereq" style="display:none;background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:#e3b341;">
+    ⚠️ Submit the ActionRequest in Step 2 first to get a live request_id.
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#f85149;"></span>C5 — 5 deterministic checks (all three paths run these)</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+      <div style="background:#0d1117;border:1px solid #1f6feb33;border-radius:8px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#1f3a5c;border:2px solid #1f6feb;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#58a6ff;flex-shrink:0;">1</div>
+        <div style="text-align:center;"><div style="font-size:12px;font-weight:700;color:#c9d1d9;margin-bottom:2px;">Confidence</div><div style="font-size:11px;color:#8b949e;line-height:1.4;">score ≥ 0.80<br>threshold</div></div>
+        <div style="font-size:10px;background:#1f3a5c;color:#58a6ff;border-radius:4px;padding:1px 7px;font-weight:700;">RULE</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #1f6feb33;border-radius:8px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#1f3a5c;border:2px solid #1f6feb;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#58a6ff;flex-shrink:0;">2</div>
+        <div style="text-align:center;"><div style="font-size:12px;font-weight:700;color:#c9d1d9;margin-bottom:2px;">src_ip Check</div><div style="font-size:11px;color:#8b949e;line-height:1.4;">not on<br>protected list</div></div>
+        <div style="font-size:10px;background:#1f3a5c;color:#58a6ff;border-radius:4px;padding:1px 7px;font-weight:700;">RULE</div>
+      </div>
+      <div style="background:#0d1117;border:1px solid #23863633;border-radius:8px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#0d2a1a;border:2px solid #238636;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#3fb950;flex-shrink:0;">3</div>
+        <div style="text-align:center;"><div style="font-size:12px;font-weight:700;color:#c9d1d9;margin-bottom:2px;">Action Count</div><div style="font-size:11px;color:#8b949e;line-height:1.4;">actions list<br>≤ 5 items</div></div>
+        <div style="font-size:10px;background:#0d2a1a;color:#3fb950;border-radius:4px;padding:1px 7px;font-weight:700;">HARD LIMIT</div>
+      </div>
+      <div style="background:#1a1000;border:1px solid #9e6a0355;border-radius:8px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#3a2200;border:2px solid #9e6a03;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#e3b341;flex-shrink:0;">4</div>
+        <div style="text-align:center;"><div style="font-size:12px;font-weight:700;color:#c9d1d9;margin-bottom:2px;">OT Safe-State</div><div style="font-size:11px;color:#8b949e;line-height:1.4;">isolate_plc noted;<br>enforced by C4</div></div>
+        <div style="font-size:10px;background:#3a2200;color:#e3b341;border-radius:4px;padding:1px 7px;font-weight:700;">OT POLICY</div>
+      </div>
+      <div style="background:#1a1000;border:1px solid #9e6a0355;border-radius:8px;padding:12px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;">
+        <div style="width:34px;height:34px;border-radius:50%;background:#3a2200;border:2px solid #9e6a03;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;color:#e3b341;flex-shrink:0;">5</div>
+        <div style="text-align:center;"><div style="font-size:12px;font-weight:700;color:#c9d1d9;margin-bottom:2px;">ZTA Scope</div><div style="font-size:11px;color:#8b949e;line-height:1.4;">OT zone<br>boundary check</div></div>
+        <div style="font-size:10px;background:#3a2200;color:#e3b341;border-radius:4px;padding:1px 7px;font-weight:700;">OT POLICY</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:10px;font-size:11.5px;color:#6e7681;align-items:center;flex-wrap:wrap;">
+      <span>Checks <strong style="color:#58a6ff;">1–2</strong> apply to all pilots.</span>
+      <span>Check <strong style="color:#3fb950;">3</strong> is a hard reject — no LLM recovery.</span>
+      <span>Checks <strong style="color:#e3b341;">4–5</strong> are <code>INDUSTRY_4</code> OT policies only.</span>
+      <span>LLM consulted only on borderline checks 1, 2, or 5.</span>
+      <span>Check <strong style="color:#e3b341;">4</strong>: noted in C5; hard-enforced at execution by <code>scada_opcua</code> (raises ValueError if mode ≠ safe-state).</span>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#238636;margin-bottom:10px;">
+    <div class="live-header" style="background:#0d2a1a;border-bottom-color:#238636;">
+      <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">Path A</span>
+      <span class="live-endpoint"><strong style="color:#3fb950;">No LLM → immediate APPROVED</strong> — all checks pass</span>
+      <button class="run-btn" style="background:#238636;" onclick="runGuardrail('A')" id="btn-guardrail-a">▶ Run Path A</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Submit + Guardrail — confidence 0.91, 3 actions — edit freely</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-guardrail-a">{
+  "request_id": "demo-path-a-no-llm-approved",
+  "event_id": "(run Step 1 first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc", "create_incident"],
+  "agent_confidence": 0.91
+}</textarea>
+      <div class="spinner" id="spin-guardrail-a"><div class="spin"></div> Running C5 guardrail…</div>
+      <div class="api-resp" id="resp-guardrail-a">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-guardrail-a-badge"></span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-guardrail-a-time"></span></div>
+        <pre id="resp-guardrail-a-body" style="border-color:#238636;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#da3633;margin-bottom:10px;">
+    <div class="live-header" style="background:#2a0d0d;border-bottom-color:#da3633;">
+      <span class="live-badge" style="background:#2a0d0d;color:#f85149;border-color:#da3633;">Path B</span>
+      <span class="live-endpoint"><strong style="color:#f85149;">No LLM → immediate REJECTED</strong> — action count exceeds 5</span>
+      <button class="run-btn" style="background:#da3633;" onclick="runGuardrail('B')" id="btn-guardrail-b">▶ Run Path B</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Submit + Guardrail — 6 actions → hard reject, LLM never consulted</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-guardrail-b">{
+  "request_id": "demo-path-b-no-llm-rejected",
+  "event_id": "(run Step 1 first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc", "block_ip", "query_logs", "revoke_ot_session", "update_zt_policy"],
+  "agent_confidence": 0.91
+}</textarea>
+      <div class="spinner" id="spin-guardrail-b"><div class="spin"></div> Running C5 guardrail…</div>
+      <div class="api-resp" id="resp-guardrail-b">
+        <div class="resp-header"><span class="resp-badge resp-err" id="resp-guardrail-b-badge"></span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-guardrail-b-time"></span></div>
+        <pre id="resp-guardrail-b-body" style="border-color:#da3633;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#9e6a03;">
+    <div class="live-header" style="background:#2a1a00;border-bottom-color:#9e6a03;">
+      <span class="live-badge" style="background:#2a1a00;color:#e3b341;border-color:#9e6a03;">Path C</span>
+      <span class="live-endpoint"><strong style="color:#e3b341;">LLM invoked (ESCALATE resolved)</strong> — borderline condition fires Mistral 7B</span>
+      <button class="run-btn" style="background:#9e6a03;" onclick="runGuardrail('C')" id="btn-guardrail-c">▶ Run Path C</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Submit + Guardrail — confidence 0.72 (below 0.80 threshold) → Mistral 7B called</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-guardrail-c">{
+  "request_id": "demo-path-c-llm-escalate",
+  "event_id": "(run Step 1 first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc"],
+  "agent_confidence": 0.72
+}</textarea>
+      <div class="info-box" style="margin-top:6px;font-size:12px;">⏱️ Mistral 7B inference — may take 15–45s. If Ollama is unreachable, C5 stays <code>ESCALATE</code> and surfaces to a human analyst (fail-closed — never auto-approves).</div>
+      <div class="spinner" id="spin-guardrail-c"><div class="spin"></div> <span id="spin-guardrail-c-msg">Running C5… borderline detected, invoking Mistral 7B…</span></div>
+      <div class="api-resp" id="resp-guardrail-c">
+        <div class="resp-header"><span class="resp-badge" id="resp-guardrail-c-badge"></span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-guardrail-c-time"></span></div>
+        <pre id="resp-guardrail-c-body" style="border-color:#9e6a03;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 4 (Integration Mode) ── -->
+<div class="step-panel" id="panel4">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a2a00;font-size:22px;">⚡</div>
+    <div>
+      <div class="step-label" style="color:#3fb950;">Integration Mode — T5.4 Production Path</div>
+      <div class="step-title">Full Pipeline in One Call: C5 → C3 → C4</div>
+      <div class="step-subtitle">POST /api/v1/action-requests — this is the endpoint T5.4 calls in production; Steps 2 and 3 are not involved</div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:#238636;margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#3fb950;"></span>Two paths to execution — what's the difference?</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;">
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#6e7681;margin-bottom:8px;">Steps 1 → 2 → 3 → here (manual)</div>
+        <div style="font-size:12.5px;color:#8b949e;line-height:1.8;">You stored the ActionRequest separately (Step 2) and ran the guardrail in isolation (Step 3) to inspect the C5 verdict before committing. This is useful for demos, audits, and understanding what C5 decided — but it's not how T5.4 works in production.</div>
+      </div>
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:8px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#3fb950;margin-bottom:8px;">Step 1 → here only (T5.4 integration)</div>
+        <div style="font-size:12.5px;color:#8b949e;line-height:1.8;">T5.4 calls <code style="color:#3fb950;">POST /api/v1/action-requests</code> directly — one call, no prior submit or separate guardrail check. C5, C3, C4 and the audit record all execute inside this single request. Steps 2 and 3 are not called at all.</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;padding:9px 14px;background:#161b22;border-radius:6px;font-size:12px;color:#6e7681;">
+      The response from this endpoint includes the full <code>ExecutionResult</code> (per-action outcomes, overall success) plus <code>policy_translation.rego_output</code> when a Rego rule was generated. The AuditRecord is written to SQLite automatically — Step 4 retrieves it.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#ffa657;"></span>C4 tool adapter layer — Siemens dispatch</div>
+    <div class="tl">
+      <div class="tl-item">
+        <div class="tl-dot" style="background:#d1842a;">1</div>
+        <div class="tl-body card" style="margin-bottom:0;">
+          <div class="tl-title"><code>isolate_plc</code> → <strong>scada_opcua</strong></div>
+          <div class="tl-desc" style="margin:5px 0;">Puts PLC-WWTP-RO into safe-state. C3 injects <code>mode="safe-state"</code> automatically — C5 check ④ validated this before dispatch.</div>
+          <pre style="font-size:11px;margin:4px 0;"><span class="key">"action"</span>: <span class="str">"isolate_plc"</span>, <span class="key">"plugin"</span>: <span class="str">"scada_opcua"</span>, <span class="key">"params"</span>: {<span class="key">"mode"</span>: <span class="str">"safe-state"</span>}, <span class="key">"success"</span>: <span class="ok">true</span></pre>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot" style="background:#d1842a;">2</div>
+        <div class="tl-body card" style="margin-bottom:0;">
+          <div class="tl-title"><code>notify_soc</code> → <strong>scada_opcua</strong></div>
+          <div class="tl-desc" style="margin:5px 0;">Structured OT security alert with full CanonicalEvent context to the Siemens Romania SOC team.</div>
+          <pre style="font-size:11px;margin:4px 0;"><span class="key">"action"</span>: <span class="str">"notify_soc"</span>, <span class="key">"plugin"</span>: <span class="str">"scada_opcua"</span>, <span class="key">"success"</span>: <span class="ok">true</span></pre>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot" style="background:#d1842a;">3</div>
+        <div class="tl-body card" style="margin-bottom:0;">
+          <div class="tl-title"><code>create_incident</code> → <strong>industrial_siem</strong></div>
+          <div class="tl-desc" style="margin:5px 0;">Structured incident record linking MITRE T0855, the CanonicalEvent UUID, and isolate_plc outcome. Dispatched to Splunk adapter.</div>
+          <pre style="font-size:11px;margin:4px 0;"><span class="key">"action"</span>: <span class="str">"create_incident"</span>, <span class="key">"plugin"</span>: <span class="str">"industrial_siem"</span>, <span class="key">"success"</span>: <span class="ok">true</span></pre>
+        </div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:10px;">C3 also compiles the <code>policy_update</code> NL string to OPA/Rego using Mistral Nemo 12B. The generated Rego rule is included in the response as <code>policy_translation.rego_output</code>. Expect 15–90s if Ollama is handling this for the first time.</div>
+  </div>
+
+  <div class="live-section" style="border-color:#3fb950;">
+    <div class="live-header" style="background:#0d2a1a;border-bottom-color:#3fb950;">
+      <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">● Live</span>
+      <span class="live-endpoint">POST /api/v1/action-requests — <strong style="color:#3fb950;">full C5 → C3 → C4 pipeline</strong></span>
+      <button class="run-btn" style="background:#238636;" onclick="runActionRequest()" id="btn-action">▶ Execute Full Pipeline</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — edit freely. event_id auto-fills from Step 1.</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-action">{
+  "request_id": "c3d4e5f6-a1b2-0987-dcba-fedcba987654",
+  "event_id": "(run Step 1 first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc", "create_incident"],
+  "policy_update": "Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours",
+  "agent_confidence": 0.87
+}</textarea>
+      <div class="spinner" id="spin-action"><div class="spin"></div> <span id="spin-action-msg">C5 safety gate running…</span></div>
+      <div class="api-resp" id="resp-action">
+        <div class="resp-header"><span class="resp-badge" id="resp-action-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-action-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">ExecutionResult + policy_translation</div>
+        <pre id="resp-action-body"></pre>
+        <div class="success-box" id="action-audit-box" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── C4 DISPATCH ── -->
+<div class="step-panel" id="panel5">
+  <div class="step-header">
+    <div class="step-icon" style="background:#2a1a0d;font-size:22px;">📤</div>
+    <div>
+      <div class="step-label" style="color:#ffa657;">Component C4 — Tool Adapter Layer</div>
+      <div class="step-title">Action Dispatch to Pilot Tool APIs</div>
+      <div class="step-subtitle">t53.actions.dispatch → C4 adapter plugins → Siemens SCADA / SIEM / IAM · stub responses until M10–M15</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#ffa657;"></span>What this step is</div>
+    <div class="narrative" style="font-size:13px;">
+      Once C5 has approved the ActionRequest and C3 has translated any NL policy to Rego, <strong>C4 takes each action verb and dispatches it to the matching adapter plugin</strong>, which wraps the call to the actual pilot tool API. T5.3 publishes the dispatch fire-and-forget to <code>t53.actions.dispatch</code> and closes the audit record immediately — it does not wait for the pilot tool to respond.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+      <div style="background:#2a1a0d;border:1px solid #d1842a;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#ffa657;margin-bottom:6px;">C4 Adapter routing</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.7;">C3 routes each string in <code>actions</code> to the first C4 adapter whose <code>supported_actions</code> list contains that exact verb. Unknown verbs return <code>success=false, response_code=404</code>.</div>
+      </div>
+      <div style="background:#1a1a2a;border:1px solid #6e7681;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#a5d6ff;margin-bottom:6px;">Fire-and-forget</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.7;">T5.3 returns 202 immediately after publishing to <code>t53.actions.dispatch</code>. It never blocks on downstream pilot tool responses or network latency.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#ffa657;"></span>Verb → Plugin → Tool routing (Siemens / INDUSTRY_4)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:1px solid #30363d;">
+          <th style="text-align:left;padding:7px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Action verb</th>
+          <th style="text-align:left;padding:7px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">C4 plugin</th>
+          <th style="text-align:left;padding:7px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Pilot tool</th>
+          <th style="text-align:left;padding:7px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;"><code style="color:#ffa657;">isolate_plc</code></td>
+          <td style="padding:8px 10px;"><code style="color:#c9d1d9;">scada_opcua</code></td>
+          <td style="padding:8px 10px;color:#8b949e;">OPC-UA SCADA endpoint</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;"><code style="color:#ffa657;">notify_soc</code></td>
+          <td style="padding:8px 10px;"><code style="color:#c9d1d9;">scada_opcua</code></td>
+          <td style="padding:8px 10px;color:#8b949e;">OPC-UA SCADA endpoint</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;"><code style="color:#ffa657;">create_incident</code></td>
+          <td style="padding:8px 10px;"><code style="color:#c9d1d9;">industrial_siem</code></td>
+          <td style="padding:8px 10px;color:#8b949e;">Splunk (industrial)</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">revoke_ot_session</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">ot_iam</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">OT IAM</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">query_sessions</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">ot_iam</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">OT IAM</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">block_ip</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">industrial_siem</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">Splunk (industrial)</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #21262d;">
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">query_logs</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">industrial_siem</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">Splunk (industrial)</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+        <tr>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">update_zt_policy</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">scada_opcua</td>
+          <td style="padding:8px 10px;color:#6e7681;font-style:italic;">OPC-UA SCADA endpoint</td>
+          <td style="padding:8px 10px;"><span class="tag tag-yellow">Stub</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:8px;font-size:11px;color:#6e7681;font-style:italic;">Bold rows: invoked in this scenario. Greyed rows: available adapters in the full Siemens verb catalogue, not invoked here.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Dispatch message on <code>t53.actions.dispatch</code></div>
+    <pre style="font-size:11px;">{
+  <span class="key">"pilot"</span>:    <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"actions"</span>:  [<span class="str">"isolate_plc"</span>, <span class="str">"notify_soc"</span>, <span class="str">"create_incident"</span>],
+  <span class="key">"event_id"</span>: <span class="str">"&lt;UUID echoed from CanonicalEvent&gt;"</span>,
+  <span class="key">"request_id"</span>: <span class="str">"&lt;UUID from ActionRequest&gt;"</span>
+}
+<span class="cmt">// Published fire-and-forget — T5.3 does not wait for a response.</span>
+<span class="cmt">// Pilot tools consume this topic and ACK to their own monitoring.</span></pre>
+  </div>
+
+  <div style="background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:12px 16px;margin-top:14px;font-size:12.5px;color:#e3b341;line-height:1.7;">
+    <strong>⚠ Stub adapters (M10–M15)</strong> — All C4 plugins currently return canned stub responses. Real implementations against OTE and Siemens pilot tool APIs are planned for M10–M15. The adapter interface, verb catalogue, and safe-state enforcement (e.g. <code>isolate_plc</code> requires <code>mode="safe-state"</code>) are already in place.
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="card-title"><span class="dot" style="background:#ffa657;"></span>Stub ActionResult responses — from last execution</div>
+    <div style="font-size:12.5px;color:#8b949e;margin-bottom:10px;line-height:1.6;">The <code>action_results</code> array from the last ⚡ Full Pipeline run. Each entry is what the C4 adapter returned — currently stub data, real in M10–M15.</div>
+    <div class="live-section">
+      <div class="live-header" style="background:#2a1a0d;border-bottom-color:#d1842a;">
+        <span class="live-badge" style="background:#2a1a0d;color:#ffa657;border-color:#d1842a;">● Live</span>
+        <span class="live-endpoint">GET /api/v1/results/{request_id} → action_results</span>
+        <button class="run-btn" style="background:#d1842a;" onclick="runGetActionResults()">▶ Fetch</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">Reads the ExecutionResult for the last pipeline run and displays only the per-action outcomes.</div>
+        <div class="spinner" id="spin-c4-results"><div class="spin"></div> Fetching…</div>
+        <div class="api-resp" id="resp-c4-results">
+          <div class="resp-header"><span class="resp-badge resp-ok" id="resp-c4-results-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-c4-results-time"></span></div>
+          <pre id="resp-c4-results-body"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 6 ── -->
+<div class="step-panel" id="panel6">
+  <div class="step-header">
+    <div class="step-icon" style="background:#0d2a1a;">✅</div>
+    <div>
+      <div class="step-label" style="color:#3fb950;">Step 4 — Result & Audit</div>
+      <div class="step-title">Reading Back What the Pipeline Produced</div>
+      <div class="step-subtitle">GET /api/v1/results/{request_id} · GET /api/v1/audit · GET /api/v1/audit/{audit_id}</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#3fb950;"></span>What this step is</div>
+    <div class="narrative" style="font-size:13px;">
+      When the full pipeline ran (⚡ Full Pipeline above), T5.3 wrote three artefacts to SQLite and fired results onto the broker. <strong>This step is about reading those artefacts back</strong> — verifying what happened, inspecting the generated Rego rule, and querying the audit trail.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px;">
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#3fb950;margin-bottom:6px;">ExecutionResult</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6;">Per-action success/failure, overall outcome, the generated Rego rule. Also published to <code>t53.results</code> on RabbitMQ for T5.4 and T5.2 to consume.</div>
+      </div>
+      <div style="background:#0d2137;border:1px solid #1f6feb;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#58a6ff;margin-bottom:6px;">AuditRecord</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6;">Lifecycle record opened when C5 ran, closed after dispatch. Includes C5 verdict, action latencies, timestamps. Survives container restarts. IDs follow the pattern <code>aud-SIE-0074</code>.</div>
+      </div>
+      <div style="background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#e3b341;margin-bottom:6px;">WorkflowCSVLogger</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6;">One row appended to <code>data/workflow_audit.csv</code> — full C1→C5→C3→C4 telemetry in a flat file. Not queryable via REST but mounted on the host for easy inspection.</div>
+      </div>
+    </div>
+    <div class="info-box" style="margin-top:10px;font-size:12px;">Run <strong>⚡ Full Pipeline</strong> for the OT JSON path, the LLM path, or both — then use the source pills below to select which event's result to retrieve. The AuditRecord and ExecutionResult persist in SQLite across container restarts.</div>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#3fb950;"></span>ExecutionResult schema (published to t53.results)</div>
+      <pre style="font-size:11px;">{
+  <span class="key">"request_id"</span>:        <span class="str">"c3d4e5f6-…"</span>,
+  <span class="key">"event_id"</span>:          <span class="str">"&lt;UUID from C1&gt;"</span>,
+  <span class="key">"pilot"</span>:             <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"action_results"</span>:   [ … ],
+  <span class="key">"overall_success"</span>:  <span class="ok">true</span>,
+  <span class="key">"timestamp"</span>:        <span class="str">"2026-09-02T…"</span>,
+  <span class="key">"policy_translation"</span>: {
+    <span class="key">"nl_input"</span>:  <span class="str">"Deny all OPC-UA …"</span>,
+    <span class="key">"rego_output"</span>: <span class="str">"package vigilance.siemens.ot\n…"</span>
+  }
+}</pre>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#58a6ff;"></span>Audit artefacts produced</div>
+      <div class="tl">
+        <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">1</div><div><div class="tl-title">AuditRecord — written to SQLite</div><div class="tl-desc">Opened at C5 gate entry, closed after dispatch. Survives container restarts. Queryable via REST.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">2</div><div><div class="tl-title">WorkflowCSVLogger</div><div class="tl-desc">One row appended to <code>data/workflow_audit.csv</code> — full C1→C5→C3→C4 telemetry.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#238636;">3</div><div><div class="tl-title">ExecutionResult stored in SQLite</div><div class="tl-desc">Retrievable any time via <code>GET /api/v1/results/{request_id}</code> — including the Rego rule.</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box" style="margin-top:4px;font-size:12px;">Use the live sections below to retrieve results and audit records — select which Step 1 path's result to view using the pills. Use <strong>📋 OPA / Rego</strong> (sidebar) to see the generated Rego rule. Use <strong>🔍 API Explorer</strong> for additional query options.</div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Downstream consumers</div>
+    <div style="font-size:13px;color:#8b949e;line-height:1.9;">
+      <div><code>t53.results</code> → <strong>T5.4 (GFT)</strong> — incident closure feedback loop</div>
+      <div><code>t53.results</code> → <strong>T5.2 (GFT)</strong> — agent improvement / MLOps feedback loop</div>
+      <div><code>t53.policy_updates</code> → downstream consumer TBD (T5.6 discussion M7–M9)</div>
+      <div><code>t53.actions.dispatch</code> → Pilot tools (fire-and-forget)</div>
+    </div>
+    <div class="info-box" style="margin-top:10px;">T5.3 returns immediately after dispatching — it never blocks on downstream consumers or pilot tool responses. The audit record closes asynchronously.</div>
+  </div>
+
+  <!-- Live API calls — source picker + results/audit -->
+  <div class="card" style="margin-top:14px;">
+    <div class="card-title"><span class="dot" style="background:#58a6ff;"></span>Retrieve results &amp; audit records</div>
+    <div style="margin-bottom:10px;font-size:12.5px;color:#8b949e;line-height:1.7;">
+      Run ⚡ Full Pipeline for either or both Step 1 paths, then select whose results to inspect. The pills become active once the corresponding path has been executed.
+    </div>
+    <div class="eid-row" style="margin-bottom:14px;">
+      <span class="eid-row-label">request_id from:</span>
+      <button class="eid-pill" id="ridpill-known" onclick="useRequestId('known')" disabled>OT JSON (no LLM)</button>
+      <button class="eid-pill" id="ridpill-llm"   onclick="useRequestId('llm')"   disabled>LLM path</button>
+      <span style="font-size:11px;color:#58a6ff;font-family:monospace;margin-left:8px;word-break:break-all;" id="s5-rid-display"></span>
+    </div>
+
+    <div class="live-section">
+      <div class="live-header" style="background:#0d2a1a;border-bottom-color:#238636;">
+        <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">● Live</span>
+        <span class="live-endpoint">GET /api/v1/results/{request_id}</span>
+        <button class="run-btn" style="background:#238636;" onclick="runGetResult()">▶ Get Result</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">ExecutionResult — per-action outcomes, overall success, generated Rego rule.</div>
+        <div class="spinner" id="spin-result"><div class="spin"></div> Fetching…</div>
+        <div class="api-resp" id="resp-result">
+          <div class="resp-header"><span class="resp-badge resp-ok" id="resp-result-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-result-time"></span></div>
+          <pre id="resp-result-body"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="live-section" style="margin-top:10px;">
+      <div class="live-header" style="background:#2a1a0d;border-bottom-color:#d1842a;">
+        <span class="live-badge" style="background:#2a1a0d;color:#ffa657;border-color:#d1842a;">● Live</span>
+        <span class="live-endpoint">GET /api/v1/audit?pilot=INDUSTRY_4</span>
+        <button class="run-btn" style="background:#d1842a;" onclick="runListAudit()">▶ List Audit</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">All AuditRecords for INDUSTRY_4. Captures audit_id for the Get by ID call below.</div>
+        <div class="spinner" id="spin-audit-list"><div class="spin"></div> Querying…</div>
+        <div class="api-resp" id="resp-audit-list">
+          <div class="resp-header"><span class="resp-badge resp-ok" id="resp-audit-list-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-audit-list-time"></span></div>
+          <pre id="resp-audit-list-body"></pre>
+          <div id="audit-id-box" style="display:none;" class="success-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="live-section" style="margin-top:10px;">
+      <div class="live-header" style="background:#2a1a0d;border-bottom-color:#d1842a;">
+        <span class="live-badge" style="background:#2a1a0d;color:#ffa657;border-color:#d1842a;">● Live</span>
+        <span class="live-endpoint">GET /api/v1/audit/{audit_id}</span>
+        <button class="run-btn" style="background:#d1842a;" onclick="runGetAuditById()">▶ Get by ID</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">Single AuditRecord — auto-fills audit_id after listing above.</div>
+        <div class="spinner" id="spin-audit-get"><div class="spin"></div> Fetching…</div>
+        <div class="api-resp" id="resp-audit-get">
+          <div class="resp-header"><span class="resp-badge resp-ok" id="resp-audit-get-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-audit-get-time"></span></div>
+          <pre id="resp-audit-get-body"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP 7 ── -->
+<div class="step-panel" id="panel7">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a2a0d;">🌍</div>
+    <div>
+      <div class="step-label" style="color:#7ee787;">Cross-Pilot Transferability</div>
+      <div class="step-title">One Framework — Four GA Pilots via C6 Profiles</div>
+      <div class="step-subtitle">Sector detection per-event in C1 — no restart, no config change. Unknown pilots are hard-rejected.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#7ee787;"></span>Multi-pilot without multi-instance</div>
+    <div class="narrative" style="font-size:13px;">A <strong>single runtime container</strong> serves all four GA pilots simultaneously. Sector detection happens per-event in C1 by parser heuristics and LLM field extraction. The correct C6 profile and C4 adapter set are selected per event.</div>
+  </div>
+
+  <div class="live-section">
+    <div class="live-header">
+      <span class="live-badge">● Live</span>
+      <span class="live-endpoint">GET /api/v1/profiles — see all loaded sector profiles</span>
+      <button class="run-btn" onclick="runProfiles()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="spinner" id="spin-profiles"><div class="spin"></div> Fetching profiles…</div>
+      <div class="api-resp" id="resp-profiles">
+        <div class="resp-header"><span class="resp-badge resp-ok">200 OK</span></div>
+        <pre id="resp-profiles-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#d2a8ff;"></span>TELECOM · OTE (Greece) ✅ INNOV scope</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8;">Plugins: ote_siem · ote_iam · ote_ids<br>Threshold: 0.80 · OT flag: false<br>Fields: subscriber_id, cell_id, imsi</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#7ee787;"></span>INDUSTRY_4 · Siemens (Romania) ✅ INNOV scope</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8;">Plugins: scada_opcua · ot_iam · industrial_siem<br>Threshold: 0.80 · <strong style="color:#f85149;">OT flag: true</strong><br>Fields: plc_id, line_id, scada_zone, ot_protocol</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#58a6ff;"></span>MARITIME — GA transferability</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8;">Plugins: port_siem · port_iam · port_ops<br>Threshold: 0.80 · OT flag: false</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#ffa657;"></span>FINANCE — GA transferability</div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.8;">Plugins: bank_siem · bank_iam · fraud_engine<br>Threshold: <strong>0.85</strong> (PSD2/DORA) · OT flag: false</div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-top:14px;border-color:#da3633;">
+    <div class="live-header" style="background:#2a0d0d;border-bottom-color:#da3633;">
+      <span class="live-badge" style="background:#2a0d0d;color:#f85149;border-color:#da3633;">● Live <span class="new-badge">NEW</span></span>
+      <span class="live-endpoint">POST /api/v1/events with unknown pilot — <strong style="color:#f85149;">no silent fallback after LLM extraction fails</strong></span>
+      <button class="run-btn" style="background:#da3633;" onclick="runUnknownPilot()">▶ Run — Expect Rejection</button>
+    </div>
+    <div class="live-body">
+      <div class="warn-box" style="margin-bottom:10px;font-size:12px;">⚠️ The LLM <strong>must</strong> run — it is C1's only tool for free-text. What changed vs. before: previously the fallback was <code>pilot = TELECOM</code> (silent). Now it is <code>ValueError</code> with the supported pilot list (hard reject). The latency comes from the LLM call, not the validation itself.</div>
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — edit freely</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-unknown-pilot" style="min-height:80px;">{
+  "raw": "ALERT from pilot-beta: anomaly detected on device XYZ",
+  "description": "Event with unrecognised pilot — triggers fail-fast validation"
+}</textarea>
+      <div style="font-size:11.5px;color:#8b949e;margin-top:6px;font-style:italic;">C1 pipeline: no schema match → Mistral 7B invoked → pilot=UNKNOWN extracted → ValueError raised with supported pilot list</div>
+      <div class="spinner" id="spin-unknown-pilot"><div class="spin"></div> C1 invoking Mistral 7B to attempt pilot extraction from free-text… (expect 20–60s)</div>
+      <div class="api-resp" id="resp-unknown-pilot">
+        <div class="resp-header"><span class="resp-badge" id="resp-unknown-pilot-badge">500</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-unknown-pilot-time"></span></div>
+        <pre id="resp-unknown-pilot-body" style="border-color:#da3633;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Adding a fifth sector</div>
+    <div class="narrative" style="font-size:13px;">Requires: (1) new YAML profile, (2) three new C4 adapter plugins, (3) register in <code>_ADAPTER_BUILDERS</code> in <code>pipeline.py</code>. <strong>No changes to pipeline logic, schemas, or broker setup.</strong> Directly satisfies the GA RS4 requirement for transferable wrappers.</div>
+  </div>
+</div>
+
+<!-- ── PANEL 8: API EXPLORER ── -->
+<div class="step-panel" id="panel8">
+  <div class="step-header">
+    <div class="step-icon" style="background:#0d1a2a;font-size:20px;">🔍</div>
+    <div>
+      <div class="step-label" style="color:#58a6ff;">Query & Inspect</div>
+      <div class="step-title">API Explorer</div>
+      <div class="step-subtitle">All read endpoints — editable parameters, independent of the pipeline flow</div>
+    </div>
+  </div>
+
+  <!-- EVENTS -->
+  <div class="card-title" style="margin-bottom:8px;"><span class="dot" style="background:#58a6ff;"></span>Events (C1 output)</div>
+
+  <div class="live-section" style="margin-bottom:10px;border-color:#1f6feb;">
+    <div class="live-header" style="background:#0d2137;border-bottom-color:#1f6feb;">
+      <span class="live-badge" style="background:#0d2137;color:#58a6ff;border-color:#1f6feb;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/events?pilot=<input class="param-input" id="param-list-events-pilot" value="INDUSTRY_4" style="width:120px;">&amp;limit=<input class="param-input" id="param-list-events-limit" value="10" style="width:50px;"></span>
+      <button class="run-btn" onclick="xRunListEvents()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Lists CanonicalEvents stored in SQLite, filtered by pilot. Survives container restarts.</div>
+      <div class="spinner" id="spin-x-list-events"><div class="spin"></div> Querying…</div>
+      <div class="api-resp" id="resp-x-list-events">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-x-list-events-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-list-events-time"></span></div>
+        <pre id="resp-x-list-events-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-bottom:18px;border-color:#1f6feb;">
+    <div class="live-header" style="background:#0d2137;border-bottom-color:#1f6feb;">
+      <span class="live-badge" style="background:#0d2137;color:#58a6ff;border-color:#1f6feb;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/events/<input class="param-input" id="param-get-event-id" placeholder="event_id (auto-fills from Step 1)" style="width:280px;"></span>
+      <button class="run-btn" onclick="xRunGetEvent()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Retrieve a single CanonicalEvent by ID. Auto-fills with the event_id captured in Step 1.</div>
+      <div class="spinner" id="spin-x-get-event"><div class="spin"></div> Fetching…</div>
+      <div class="api-resp" id="resp-x-get-event">
+        <div class="resp-header"><span class="resp-badge" id="resp-x-get-event-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-get-event-time"></span></div>
+        <pre id="resp-x-get-event-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTION REQUESTS -->
+  <div class="card-title" style="margin-bottom:8px;"><span class="dot" style="background:#d2a8ff;"></span>Action Requests (T5.4 → T5.3)</div>
+
+  <div class="live-section" style="margin-bottom:10px;border-color:#8957e5;">
+    <div class="live-header" style="background:#1a0d37;border-bottom-color:#8957e5;">
+      <span class="live-badge" style="background:#1a0d37;color:#d2a8ff;border-color:#8957e5;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/action-requests?pilot=<input class="param-input" id="param-list-ar-pilot" value="INDUSTRY_4" style="width:120px;"></span>
+      <button class="run-btn" style="background:#8957e5;" onclick="xRunListAR()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Lists stored ActionRequests from SQLite for the given pilot.</div>
+      <div class="spinner" id="spin-x-list-ar"><div class="spin"></div> Querying…</div>
+      <div class="api-resp" id="resp-x-list-ar">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-x-list-ar-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-list-ar-time"></span></div>
+        <pre id="resp-x-list-ar-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-bottom:18px;border-color:#8957e5;">
+    <div class="live-header" style="background:#1a0d37;border-bottom-color:#8957e5;">
+      <span class="live-badge" style="background:#1a0d37;color:#d2a8ff;border-color:#8957e5;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/action-requests/<input class="param-input" id="param-get-ar-id" placeholder="request_id (auto-fills from Step 2)" style="width:280px;"></span>
+      <button class="run-btn" style="background:#8957e5;" onclick="xRunGetAR()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Retrieve a single stored ActionRequest by ID.</div>
+      <div class="spinner" id="spin-x-get-ar"><div class="spin"></div> Fetching…</div>
+      <div class="api-resp" id="resp-x-get-ar">
+        <div class="resp-header"><span class="resp-badge" id="resp-x-get-ar-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-get-ar-time"></span></div>
+        <pre id="resp-x-get-ar-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="card-title" style="margin-bottom:8px;"><span class="dot" style="background:#3fb950;"></span>Execution Results</div>
+
+  <div class="live-section" style="margin-bottom:18px;border-color:#238636;">
+    <div class="live-header" style="background:#0d2a1a;border-bottom-color:#238636;">
+      <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/results/<input class="param-input" id="param-get-result-id" placeholder="request_id (auto-fills after ⚡ Full Pipeline)" style="width:300px;"></span>
+      <button class="run-btn" style="background:#238636;" onclick="xRunGetResult()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Retrieve ExecutionResult for a completed pipeline run. Includes <code>policy_translation.rego_output</code> when Rego was generated.</div>
+      <div class="spinner" id="spin-x-get-result"><div class="spin"></div> Fetching…</div>
+      <div class="api-resp" id="resp-x-get-result">
+        <div class="resp-header"><span class="resp-badge" id="resp-x-get-result-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-get-result-time"></span></div>
+        <pre id="resp-x-get-result-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUDIT -->
+  <div class="card-title" style="margin-bottom:8px;"><span class="dot" style="background:#ffa657;"></span>Audit Records</div>
+
+  <div class="live-section" style="margin-bottom:10px;border-color:#d1842a;">
+    <div class="live-header" style="background:#2a1a0d;border-bottom-color:#d1842a;">
+      <span class="live-badge" style="background:#2a1a0d;color:#ffa657;border-color:#d1842a;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/audit?pilot=<input class="param-input" id="param-list-audit-pilot" value="INDUSTRY_4" style="width:120px;"></span>
+      <button class="run-btn" style="background:#d1842a;" onclick="xRunListAudit()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Lists AuditRecords from SQLite. IDs follow the pattern <code>aud-SIE-0074</code>, <code>aud-OTE-0031</code> etc. Survive container restarts.</div>
+      <div class="spinner" id="spin-x-list-audit"><div class="spin"></div> Querying…</div>
+      <div class="api-resp" id="resp-x-list-audit">
+        <div class="resp-header"><span class="resp-badge resp-ok" id="resp-x-list-audit-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-list-audit-time"></span></div>
+        <pre id="resp-x-list-audit-body"></pre>
+        <div id="x-audit-id-box" style="display:none;" class="success-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="margin-bottom:18px;border-color:#d1842a;">
+    <div class="live-header" style="background:#2a1a0d;border-bottom-color:#d1842a;">
+      <span class="live-badge" style="background:#2a1a0d;color:#ffa657;border-color:#d1842a;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/audit/<input class="param-input" id="param-get-audit-id" placeholder="audit_id (auto-fills after List above)" style="width:260px;"></span>
+      <button class="run-btn" style="background:#d1842a;" onclick="xRunGetAudit()">▶ Run</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Retrieve a single AuditRecord by ID.</div>
+      <div class="spinner" id="spin-x-get-audit"><div class="spin"></div> Fetching…</div>
+      <div class="api-resp" id="resp-x-get-audit">
+        <div class="resp-header"><span class="resp-badge" id="resp-x-get-audit-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-x-get-audit-time"></span></div>
+        <pre id="resp-x-get-audit-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- SYSTEM -->
+  <div class="card-title" style="margin-bottom:8px;"><span class="dot" style="background:#6e7681;"></span>System</div>
+
+  <div class="two-col">
+    <div class="live-section" style="border-color:#21262d;">
+      <div class="live-header">
+        <span class="live-badge">● Live</span>
+        <span class="live-endpoint">GET /api/v1/formats</span>
+        <button class="run-btn" onclick="runFormats()">▶ Run</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">C1 parser registry — 5 formats in priority order with detection signals.</div>
+        <div class="spinner" id="spin-formats2"><div class="spin"></div> Fetching…</div>
+        <div class="api-resp" id="resp-formats2">
+          <div class="resp-header"><span class="resp-badge resp-ok">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-formats2-time"></span></div>
+          <pre id="resp-formats2-body"></pre>
+        </div>
+      </div>
+    </div>
+    <div class="live-section" style="border-color:#21262d;">
+      <div class="live-header">
+        <span class="live-badge">● Live</span>
+        <span class="live-endpoint">GET /api/v1/profiles</span>
+        <button class="run-btn" onclick="runProfiles()">▶ Run</button>
+      </div>
+      <div class="live-body">
+        <div class="api-req-label">All 4 sector profiles — confidence thresholds, plugin sets, OT flags.</div>
+        <div class="spinner" id="spin-profiles2"><div class="spin"></div> Fetching…</div>
+        <div class="api-resp" id="resp-profiles2">
+          <div class="resp-header"><span class="resp-badge resp-ok">200 OK</span></div>
+          <pre id="resp-profiles2-body"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PANEL 9: OPA / REGO ── -->
+<div class="step-panel" id="panel9">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a2200;font-size:20px;">📋</div>
+    <div>
+      <div class="step-label" style="color:#7ee787;">C3 — Policy Translation</div>
+      <div class="step-title">OPA / Rego Output</div>
+      <div class="step-subtitle">Natural-language policy → Rego rule via Mistral Nemo 12B · Published to t53.policy_updates</div>
+    </div>
+  </div>
+
+  <div class="warn-box" style="margin-bottom:14px;">
+    <strong>⚠️ No downstream consumer is currently defined.</strong><br>
+    C3 generates the Rego rule and publishes it to <code>t53.policy_updates</code> on RabbitMQ — but who picks it up is an <strong>open item</strong>. T5.5 was ruled out at the July 1 KOM. Candidates: T5.6 (ETRA platform) or the pilot's own OPA/equivalent engine. Discussion deferred to M7–M9. Until a consumer is wired, the Rego rule is stored in SQLite and retrievable via API — but it does not automatically enforce anything.
+  </div>
+
+  <div class="two-col" style="margin-bottom:14px;">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#3fb950;"></span>What C3 PolicyTranslator does</div>
+      <div class="tl">
+        <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">1</div><div><div class="tl-title">Receives <code>policy_update</code> NL string</div><div class="tl-desc">Short directive sentence in <code>ActionRequest.policy_update</code>. Example: <em>"Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"</em>.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">2</div><div><div class="tl-title">Mistral Nemo 12B — few-shot NL→Rego</div><div class="tl-desc">Sends to Ollama with pre-built few-shot examples. Produces a valid OPA/Rego rule package targeting the pilot's sector.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">3</div><div><div class="tl-title">OPA parse validation + retry</div><div class="tl-desc">The OPA binary (in the Docker image) validates the generated Rego. One retry on failure. Double-failure falls back to <code>default deny = true</code> — fail-closed, never auto-approves.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#238636;">4</div><div><div class="tl-title">Published to <code>t53.policy_updates</code></div><div class="tl-desc">Stored in SQLite + published on broker. Also returned in the REST API response as <code>policy_translation.rego_output</code>.</div></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Rego output from last ⚡ Full Pipeline run</div>
+      <div id="rego-nl-display" style="font-size:12px;color:#6e7681;margin-bottom:8px;font-style:italic;">— run ⚡ Full Pipeline with a policy_update field to see output here —</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#6e7681;margin-bottom:4px;">nl_input</div>
+      <pre id="rego-nl-body" style="font-size:11px;min-height:28px;border-color:#3a2a00;color:#e3b341;"></pre>
+      <div style="font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:#6e7681;margin:8px 0 4px;">rego_output</div>
+      <pre id="rego-output-body" style="font-size:11px;min-height:60px;border-color:#238636;color:#3fb950;white-space:pre;overflow-x:auto;"></pre>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#238636;">
+    <div class="live-header" style="background:#0d2a1a;border-bottom-color:#238636;">
+      <span class="live-badge" style="background:#0d2a1a;color:#3fb950;border-color:#238636;">● Live</span>
+      <span class="live-endpoint" style="flex:1;">GET /api/v1/results/<input class="param-input" id="param-rego-result-id" placeholder="request_id (auto-fills after ⚡ Full Pipeline)" style="width:300px;"> → policy_translation</span>
+      <button class="run-btn" style="background:#238636;" onclick="xRunRegoResult()">▶ Fetch Rego</button>
+    </div>
+    <div class="live-body">
+      <div class="api-req-label">Retrieves the full ExecutionResult and displays the <code>policy_translation</code> section. The Rego rule is stored here even if no downstream consumer has picked it up.</div>
+      <div class="spinner" id="spin-rego-result"><div class="spin"></div> Fetching result…</div>
+      <div class="api-resp" id="resp-rego-result">
+        <div class="resp-header"><span class="resp-badge" id="resp-rego-result-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-rego-result-time"></span></div>
+        <pre id="resp-rego-result-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <div class="card-title"><span class="dot" style="background:#e3b341;"></span>update_zt_policy (action verb) vs policy_update (schema field) — not the same thing</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;">
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;color:#ffa657;margin-bottom:6px;"><code>update_zt_policy</code> — action verb</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6;">Listed in <code>ActionRequest.actions</code>. Dispatched to the SCADA adapter (<code>scada_opcua</code>) which applies IT/OT zero-trust boundary rules to the affected OT zone. Siemens-only. Produces an <code>ActionResult</code> like any other verb.</div>
+      </div>
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:8px;padding:12px 14px;">
+        <div style="font-size:11px;font-weight:700;color:#3fb950;margin-bottom:6px;"><code>policy_update</code> — schema field</div>
+        <div style="font-size:12px;color:#8b949e;line-height:1.6;">Top-level field on <code>ActionRequest</code>. NL string → compiled to Rego by C3 → published to <code>t53.policy_updates</code>. Applies to any pilot. No downstream consumer yet. Emitting one does not imply the other.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nav-footer">
+  <button class="nav-btn secondary" id="btnPrev" onclick="navigate(-1)" disabled>← Previous</button>
+  <span class="progress-text" id="progressText">Step 1 of 9</span>
+  <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">Next →</button>
+</div>
+</main>
+</div>
+
+<script>
+  const BASE_URL = 'http://localhost:8000';
+  const TOTAL = 10;
+  let cur = 0;
+  let capturedEventId      = null;
+  let capturedEventIdLLM   = null;
+  let capturedCanonicalKnown = null;
+  let capturedCanonicalLLM   = null;
+  let capturedRequestId      = null;
+  let capturedRequestIdKnown = null;
+  let capturedRequestIdLLM   = null;
+  let capturedAuditId        = null;
+  let capturedRegoNl       = null;
+  let capturedRegoOutput   = null;
+
+  const nodeMap = [
+    ['n0'],['n1','n6'],['nT4'],['n5','n3','n4','n6'],['n3','n4'],['n4'],['nT'],
+    ['n1','n6','n5','n3','n4','nT'],[],['n3']
+  ];
+
+  // ── helpers ──────────────────────────────────────────────────────────────────
+
+  function addCollapseBtn(respEl) {
+    const header = respEl.querySelector('.resp-header');
+    if (header && !header.querySelector('.collapse-btn')) {
+      const btn = document.createElement('button');
+      btn.className = 'collapse-btn';
+      btn.textContent = '▲ collapse';
+      btn.onclick = () => respEl.classList.remove('visible');
+      header.appendChild(btn);
+    }
+  }
+
+  function fmtJSON(obj) {
+    return JSON.stringify(obj, null, 2)
+      .replace(/"([^"]+)":/g, '"<span class=\'key\'>$1</span>":')
+      .replace(/: "(.*?)"/gs, ': "<span class=\'str\'>$1</span>"')
+      .replace(/: (true|false)/g, ': <span class=\'ok\'>$1</span>')
+      .replace(/: (\d+\.?\d*)/g, ': <span class=\'num\'>$1</span>');
+  }
+
+  function setSpinner(id, on) { document.getElementById('spin-'+id).classList.toggle('visible', on); }
+
+  function showResp(id, data, status, latency) {
+    const r = document.getElementById('resp-'+id);
+    r.classList.add('visible');
+    const badge = document.getElementById('resp-'+id+'-badge');
+    if (badge) {
+      badge.textContent = status;
+      badge.className = 'resp-badge ' + (String(status).startsWith('2') ? 'resp-ok' : 'resp-err');
+    }
+    const timeEl = document.getElementById('resp-'+id+'-time');
+    if (timeEl) timeEl.textContent = latency+'ms';
+    const body = document.getElementById('resp-'+id+'-body');
+    if (body) body.innerHTML = fmtJSON(data);
+    addCollapseBtn(r);
+  }
+
+  /** Build the HTML for the event_id source selector row, inserted above each relevant textarea. */
+  function eidSourceRow(taId) {
+    return `<div class="eid-row" id="eidrow-${taId}">
+      <span class="eid-row-label">event_id from Step 1:</span>
+      <button class="eid-pill eid-pill-known" id="eidpill-${taId}-known" onclick="useEventId('${taId}','known')" disabled>OT JSON (no LLM)</button>
+      <button class="eid-pill eid-pill-llm"   id="eidpill-${taId}-llm"   onclick="useEventId('${taId}','llm')"   disabled>LLM path</button>
+    </div>`;
+  }
+
+  const EID_TAIDS = ['req-submit-ar','req-guardrail-a','req-guardrail-b','req-guardrail-c','req-action'];
+
+  /** Inject rows into the DOM once — called at page load. */
+  function mountEidRows() {
+    EID_TAIDS.forEach(taId => {
+      const ta = document.getElementById(taId);
+      if (!ta || document.getElementById('eidrow-'+taId)) return;
+      ta.insertAdjacentHTML('beforebegin', eidSourceRow(taId));
+    });
+  }
+
+  /** Refresh pill enabled/active states across all rows after a Step 1 run. */
+  function refreshEidPills(changedTaId) {
+    EID_TAIDS.forEach(taId => {
+      const pKnown = document.getElementById(`eidpill-${taId}-known`);
+      const pLlm   = document.getElementById(`eidpill-${taId}-llm`);
+      if (!pKnown || !pLlm) return;
+      pKnown.disabled = !capturedEventId;
+      pLlm.disabled   = !capturedEventIdLLM;
+      // Auto-set active state on the pill that was just used
+      if (changedTaId) {
+        const src = document.getElementById(`eidrow-${taId}`)?.dataset?.activeSrc;
+        if (src === 'known') { pKnown.classList.add('active-known'); pLlm.classList.remove('active-llm'); }
+        else if (src === 'llm') { pLlm.classList.add('active-llm'); pKnown.classList.remove('active-known'); }
+      }
+    });
+  }
+
+  /** Assign request_id to the appropriate path-specific slot, then refresh Step 4 pills. */
+  function assignRequestId(requestId, eventId) {
+    capturedRequestId = requestId;
+    if (capturedEventId    && eventId === capturedEventId)    capturedRequestIdKnown = requestId;
+    if (capturedEventIdLLM && eventId === capturedEventIdLLM) capturedRequestIdLLM   = requestId;
+    refreshRidPills();
+  }
+
+  function refreshRidPills() {
+    const pk = document.getElementById('ridpill-known');
+    const pl = document.getElementById('ridpill-llm');
+    if (pk) pk.disabled = !capturedRequestIdKnown;
+    if (pl) pl.disabled = !capturedRequestIdLLM;
+  }
+
+  function useRequestId(source) {
+    const rid   = source === 'known' ? capturedRequestIdKnown : capturedRequestIdLLM;
+    const label = source === 'known' ? 'OT JSON (no LLM)' : 'LLM path';
+    if (!rid) { alert('Run the ' + label + ' event (Step 1), then ⚡ Full Pipeline to generate a result first.'); return; }
+    capturedRequestId = rid;
+    const pk = document.getElementById('ridpill-known');
+    const pl = document.getElementById('ridpill-llm');
+    if (pk) { pk.classList.toggle('active-known', source==='known'); pk.classList.toggle('active-llm', false); }
+    if (pl) { pl.classList.toggle('active-llm',   source==='llm');   pl.classList.toggle('active-known', false); }
+    const disp = document.getElementById('s5-rid-display');
+    if (disp) disp.textContent = rid;
+  }
+
+  /** Switch which Step-1 event_id is injected into a single textarea and mark the pill. */
+  function useEventId(taId, source) {
+    const eid = source === 'known' ? capturedEventId : capturedEventIdLLM;
+    const label = source === 'known' ? 'OT JSON (no LLM)' : 'LLM path';
+    if (!eid) { alert('Run the ' + label + ' event in Step 1 first.'); return; }
+    injectEventId(taId, eid);
+    // Mark active pill
+    const pKnown = document.getElementById(`eidpill-${taId}-known`);
+    const pLlm   = document.getElementById(`eidpill-${taId}-llm`);
+    if (pKnown && pLlm) {
+      pKnown.classList.toggle('active-known', source === 'known');
+      pLlm.classList.toggle('active-llm',     source === 'llm');
+    }
+    const row = document.getElementById('eidrow-'+taId);
+    if (row) row.dataset.activeSrc = source;
+  }
+
+  /** Read a textarea as parsed JSON, surface error to user if invalid. */
+  function readTA(id) {
+    const ta = document.getElementById(id);
+    if (!ta) return null;
+    try { return JSON.parse(ta.value); }
+    catch(e) { alert('Invalid JSON in request body:\n'+e.message); return null; }
+  }
+
+  /** Inject event_id into a textarea's JSON without losing other user edits. */
+  function injectEventId(taId, eid) {
+    if (!eid) return;
+    const ta = document.getElementById(taId);
+    if (!ta) return;
+    try {
+      const obj = JSON.parse(ta.value);
+      if ('event_id' in obj) { obj.event_id = eid; ta.value = JSON.stringify(obj, null, 2); }
+    } catch(e) { /* user edited invalid JSON — leave it */ }
+  }
+
+  // ── navigation ───────────────────────────────────────────────────────────────
+
+  function goTo(idx) {
+    document.getElementById('panel'+cur).classList.remove('visible');
+    document.getElementById('sb'+cur).classList.remove('active');
+    if (cur < idx) document.getElementById('sb'+cur).classList.add('done');
+    cur = idx;
+    document.getElementById('panel'+cur).classList.add('visible');
+    for (let i=0;i<TOTAL;i++){
+      const b=document.getElementById('sb'+i);
+      if(i<cur){b.classList.remove('active');b.classList.add('done');}
+      else if(i===cur){b.classList.add('active');b.classList.remove('done');}
+      else{b.classList.remove('active','done');}
+    }
+    const all=['n0','n1','nT4','n5','n3','n4','nT','n6'];
+    all.forEach(n=>document.getElementById(n).classList.remove('active-node'));
+    (nodeMap[cur]||[]).forEach(n=>document.getElementById(n).classList.add('active-node'));
+    document.getElementById('btnPrev').disabled = cur===0;
+    document.getElementById('btnNext').disabled = cur===TOTAL-1;
+    document.getElementById('progressText').textContent = 'Step '+(cur+1)+' of '+TOTAL;
+
+    // Pills handle event_id syncing; just ensure rows are mounted on first visit
+    mountEidRows();
+
+    const w = document.getElementById('guardrail-prereq');
+    if (w) w.style.display = (cur===3 && !capturedRequestId) ? 'block' : 'none';
+    if (cur === 2) renderT54Simulation();
+  }
+
+  function navigate(dir){ goTo(Math.max(0, Math.min(TOTAL-1, cur+dir))); }
+
+  // ── Step 0 ───────────────────────────────────────────────────────────────────
+
+  async function runHealth() {
+    setSpinner('health', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/health');
+      showResp('health', await r.json(), r.status+' OK', Date.now()-t0);
+    } catch(e) { showResp('health', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('health', false);
+  }
+
+  async function runFormats() {
+    setSpinner('formats', true); setSpinner('formats2', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/formats');
+      const d = await r.json(); const lat = Date.now()-t0;
+      showResp('formats', d, r.status+' OK', lat);
+      showResp('formats2', d, r.status+' OK', lat);
+    } catch(e) {
+      showResp('formats', {error:e.message}, 'Error', Date.now()-t0);
+      showResp('formats2', {error:e.message}, 'Error', Date.now()-t0);
+    }
+    setSpinner('formats', false); setSpinner('formats2', false);
+  }
+
+  // ── Step 1 ───────────────────────────────────────────────────────────────────
+
+  async function runEvent() {
+    const payload = readTA('req-event');
+    if (!payload) return;
+    setSpinner('event', true);
+    document.getElementById('btn-event').disabled = true;
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/events', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      const latency = Date.now()-t0;
+      showResp('event', d, r.status+(r.ok?' OK':''), latency);
+      if (d.canonical_event) {
+        document.getElementById('ce-section').style.display = 'block';
+        document.getElementById('resp-ce-body').innerHTML = fmtJSON(d.canonical_event);
+        capturedCanonicalKnown = d.canonical_event;
+      }
+      renderEventHighlights(d, latency);
+      if (d.event_id) {
+        capturedEventId = d.event_id;
+        const box = document.getElementById('event-id-box');
+        box.style.display = 'block';
+        box.innerHTML = '✅ <strong>event_id captured (OT JSON / no LLM):</strong> <code style="color:#3fb950;">'+d.event_id+'</code>';
+        // Auto-inject into all relevant textareas and activate the "known" pill
+        EID_TAIDS.forEach(id => { injectEventId(id, d.event_id); useEventId(id, 'known'); });
+        refreshEidPills();
+        const eidInput = document.getElementById('param-get-event-id');
+        if (eidInput) eidInput.value = d.event_id;
+      }
+    } catch(e) { showResp('event', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('event', false);
+    document.getElementById('btn-event').disabled = false;
+  }
+
+  function renderEventHighlights(d, latency) {
+    const ce = d.canonical_event || {};
+    const parserUsed = ce.parser_used || d.parser_used || 'ot_json';
+    const llmInvoked = ce.llm_invoked ?? d.llm_invoked ?? false;
+    const otSafety   = ce.ot_safety_flag ?? d.ot_safety_flag ?? true;
+    const tiles = [
+      { label:'parser_used', value:parserUsed, color:'#3fb950', bg:'#0d2a1a', border:'#238636' },
+      { label:'llm_invoked', value:String(llmInvoked), color: llmInvoked?'#f85149':'#3fb950', bg:llmInvoked?'#2a0d0d':'#0d2a1a', border:llmInvoked?'#da3633':'#238636' },
+      { label:'ot_safety_flag', value:String(otSafety), color:otSafety?'#ffa657':'#8b949e', bg:otSafety?'#2a1a0d':'#161b22', border:otSafety?'#d1842a':'#30363d', note:otSafety?'→ C5 checks ④⑤ active':'' },
+      { label:'latency', value:latency+'ms', color:latency<400?'#3fb950':'#e3b341', bg:'#0d1a2a', border:'#1f6feb', note:latency<400?'→ no LLM overhead':'' }
+    ];
+    const hl = document.getElementById('canonical-highlights');
+    hl.style.display='grid';
+    hl.innerHTML = tiles.map(t=>`<div style="background:${t.bg};border:1px solid ${t.border};border-radius:8px;padding:10px 14px;"><div style="font-size:10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px;">${t.label}</div><div style="font-size:15px;font-weight:700;color:${t.color};font-family:monospace;">${t.value}</div>${t.note?`<div style="font-size:10px;color:${t.color};opacity:.8;margin-top:3px;">${t.note}</div>`:''}</div>`).join('');
+  }
+
+  async function runEventUnknown() {
+    const payload = readTA('req-event-unknown');
+    if (!payload) return;
+    document.getElementById('btn-event-unknown').disabled = true;
+    setSpinner('event-unknown', true);
+    const msgs = ['C1 schema detector: no match → calling Mistral 7B…', 'Mistral 7B extracting fields from free-text…', 'Mapping extracted fields to CanonicalEvent schema…'];
+    let mi = 0;
+    const ticker = setInterval(()=>{ document.getElementById('spin-event-unknown-msg').textContent = msgs[Math.min(mi++, msgs.length-1)]; }, 3000);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/events', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const d = await r.json(); clearInterval(ticker);
+      if (d.event_id) {
+        capturedEventIdLLM  = d.event_id;
+        // Enable the LLM pill on all rows; if "known" isn't set yet, also auto-inject this one
+        refreshEidPills();
+        if (!capturedEventId) {
+          EID_TAIDS.forEach(id => { injectEventId(id, d.event_id); useEventId(id, 'llm'); });
+        }
+      }
+      if (d.canonical_event) capturedCanonicalLLM = d.canonical_event;
+      const badge = document.getElementById('resp-event-unknown-badge');
+      badge.textContent = r.status+(r.ok?' Accepted':'');
+      badge.className = 'resp-badge '+(r.ok?'resp-ok':'resp-err');
+      document.getElementById('resp-event-unknown-time').textContent = (Date.now()-t0)+'ms';
+      document.getElementById('resp-event-unknown-body').innerHTML = fmtJSON(d);
+      const euEl = document.getElementById('resp-event-unknown');
+      euEl.classList.add('visible'); addCollapseBtn(euEl);
+    } catch(e) {
+      clearInterval(ticker);
+      document.getElementById('resp-event-unknown-badge').textContent='Error';
+      document.getElementById('resp-event-unknown-badge').className='resp-badge resp-err';
+      document.getElementById('resp-event-unknown-body').textContent=e.message;
+      const euEl2 = document.getElementById('resp-event-unknown');
+      euEl2.classList.add('visible'); addCollapseBtn(euEl2);
+    }
+    setSpinner('event-unknown', false);
+    document.getElementById('btn-event-unknown').disabled = false;
+  }
+
+  async function runListEvents() {
+    setSpinner('list-events', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/events?pilot=INDUSTRY_4&limit=5');
+      showResp('list-events', await r.json(), r.status+' OK', Date.now()-t0);
+    } catch(e) { showResp('list-events', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('list-events', false);
+  }
+
+  async function runGetEvent() {
+    setSpinner('get-event', true);
+    const eid = capturedEventId;
+    if (!eid) {
+      showResp('get-event', {error:'Submit the OT JSON event in Step 1 first to capture an event_id.'}, '400', Date.now());
+      setSpinner('get-event', false); return;
+    }
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/events/' + eid);
+      showResp('get-event', await r.json(), r.status+(r.ok?' OK':''), Date.now()-t0);
+    } catch(e) { showResp('get-event', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('get-event', false);
+  }
+
+  // ── Step 2 ───────────────────────────────────────────────────────────────────
+
+  function renderT54Simulation() {
+    const hasKnown = !!capturedCanonicalKnown;
+    const hasLLM   = !!capturedCanonicalLLM;
+    document.getElementById('t54-prereq').style.display = (!hasKnown && !hasLLM) ? 'block' : 'none';
+    if (hasKnown) { document.getElementById('t54-ce-known').innerHTML=fmtJSON(capturedCanonicalKnown); document.getElementById('t54-ce-known').style.color=''; }
+    if (hasLLM)   { document.getElementById('t54-ce-llm').innerHTML=fmtJSON(capturedCanonicalLLM);   document.getElementById('t54-ce-llm').style.color=''; }
+    const eid = capturedEventId || null;
+    const pre = document.getElementById('t54-action-req-display');
+    if (!eid) { pre.innerHTML='<span style="color:#6e7681;">— submit Step 1 events to populate with real event_ids —</span>'; return; }
+    pre.innerHTML=fmtJSON({request_id:'c3d4e5f6-a1b2-0987-dcba-fedcba987654',event_id:eid,pilot:'INDUSTRY_4',actions:['isolate_plc','notify_soc','create_incident'],policy_update:'Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours',agent_confidence:0.87});
+  }
+
+  async function runSubmitActionRequest() {
+    const payload = readTA('req-submit-ar');
+    if (!payload) return;
+    document.getElementById('btn-submit-ar').disabled = true;
+    setSpinner('submit-ar', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/action-requests/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const d = await r.json();
+      if (d.request_id) assignRequestId(d.request_id, payload.event_id);
+      showResp('submit-ar', d, r.status+(r.ok?' Accepted':''), Date.now()-t0);
+      const box = document.getElementById('submit-ar-id-box');
+      box.style.display='block';
+      box.innerHTML='✅ <strong>request_id stored:</strong> <code style="color:#58a6ff;">'+(capturedRequestId||payload.request_id)+'</code> — used by the guardrail calls in Step 3.';
+    } catch(e) { showResp('submit-ar', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('submit-ar', false);
+    document.getElementById('btn-submit-ar').disabled = false;
+  }
+
+  async function runListActionRequests() {
+    setSpinner('list-ar', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/action-requests?pilot=INDUSTRY_4');
+      showResp('list-ar', await r.json(), r.status+' OK', Date.now()-t0);
+    } catch(e) { showResp('list-ar', {error: e.message}, 'Error', Date.now()-t0); }
+    setSpinner('list-ar', false);
+  }
+
+  // ── Step 3 ───────────────────────────────────────────────────────────────────
+
+  async function runGuardrail(path) {
+    const taId = 'req-guardrail-'+path.toLowerCase();
+    const payload = readTA(taId);
+    if (!payload) return;
+    const p = path.toLowerCase();
+    document.getElementById('btn-guardrail-'+p).disabled = true;
+    setSpinner('guardrail-'+p, true);
+    const rid = payload.request_id;
+    let ticker = null;
+    if (path === 'C') {
+      const msgs = ['Submitting payload → invoking C5 guardrail…','Confidence below 0.80 → ESCALATE triggered…','Invoking Mistral 7B for semantic review…','Waiting for LLM verdict…'];
+      let mi = 0;
+      ticker = setInterval(()=>{ const el=document.getElementById('spin-guardrail-c-msg'); if(el) el.textContent=msgs[Math.min(mi++,msgs.length-1)]; }, 4000);
+    }
+    const t0 = Date.now();
+    try {
+      await fetch(BASE_URL+'/api/v1/action-requests/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const r = await fetch(BASE_URL+'/api/v1/action-requests/'+rid+'/guardrail', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      if (ticker) clearInterval(ticker);
+      const d = await r.json();
+      const latency = Date.now()-t0;
+      const id = 'guardrail-'+p;
+      const badge = document.getElementById('resp-'+id+'-badge');
+      const verdict = d.verdict || (r.ok?'OK':'ERROR');
+      badge.textContent = verdict+' · '+latency+'ms';
+      badge.className = 'resp-badge '+(verdict==='APPROVED'?'resp-ok':verdict==='REJECTED'?'resp-err':'resp-badge');
+      if (verdict==='ESCALATE') { badge.style.background='#2a1a00'; badge.style.color='#e3b341'; badge.style.border='1px solid #9e6a03'; }
+      document.getElementById('resp-'+id+'-time').textContent = '';
+      document.getElementById('resp-'+id+'-body').innerHTML = fmtJSON(d);
+      const respEl = document.getElementById('resp-'+id);
+      respEl.classList.add('visible');
+      addCollapseBtn(respEl);
+    } catch(e) {
+      if (ticker) clearInterval(ticker);
+      const id='guardrail-'+p;
+      document.getElementById('resp-'+id+'-badge').textContent='Error';
+      document.getElementById('resp-'+id+'-body').textContent=e.message;
+      const respEl2 = document.getElementById('resp-'+id);
+      respEl2.classList.add('visible');
+      addCollapseBtn(respEl2);
+    }
+    setSpinner('guardrail-'+p, false);
+    document.getElementById('btn-guardrail-'+p).disabled = false;
+  }
+
+  // ── Step 4 ───────────────────────────────────────────────────────────────────
+
+  async function runActionRequest() {
+    const payload = readTA('req-action');
+    if (!payload) return;
+    document.getElementById('btn-action').disabled = true;
+    setSpinner('action', true);
+    const msgs = ['C5 safety gate running…','Confidence, IP allowlist, proportionality checks…','OT check ④: isolate_plc safe-state validation…','OT check ⑤: ZTA zone scope validation…','C3 NL→Rego (Mistral Nemo 12B) — OPC-UA Zone-B→Zone-A deny…','OPA parse validation…','C4 dispatching to Siemens SCADA adapters…'];
+    let mi = 0;
+    const ticker = setInterval(()=>{ document.getElementById('spin-action-msg').textContent = msgs[Math.min(mi++,msgs.length-1)]; }, 8000);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/action-requests', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+      });
+      const d = await r.json(); clearInterval(ticker);
+      showResp('action', d, r.status+(r.ok?' OK':''), Date.now()-t0);
+      const box = document.getElementById('action-audit-box');
+      box.style.display='block';
+      box.innerHTML='✅ <strong>Execution complete.</strong> AuditRecord written to SQLite. Go to <strong>📤 C4 — Tool Dispatch</strong> to inspect adapter outcomes, or <strong>Step 4</strong> to retrieve the full result.';
+      if (d.request_id) {
+        assignRequestId(d.request_id, payload.event_id);
+        const fill = v => { if(v) v.value = d.request_id; };
+        fill(document.getElementById('param-get-result-id'));
+        fill(document.getElementById('param-rego-result-id'));
+        fill(document.getElementById('param-get-ar-id'));
+        const disp = document.getElementById('s5-rid-display');
+        if (disp && !disp.textContent) disp.textContent = d.request_id;
+      }
+      if (d.policy_translation) {
+        capturedRegoNl = d.policy_translation.nl_input || null;
+        capturedRegoOutput = d.policy_translation.rego_output || null;
+        refreshRegoPanel();
+      }
+    } catch(e) {
+      clearInterval(ticker);
+      showResp('action', {error:e.message, note:'If this timed out, Mistral 7B NL→Rego inference is still running. Check Dozzle at localhost:9999.'}, 'Error', Date.now()-t0);
+      document.getElementById('resp-action-badge').className='resp-badge resp-err';
+    }
+    setSpinner('action', false);
+    document.getElementById('btn-action').disabled = false;
+  }
+
+  // ── C4 Dispatch ───────────────────────────────────────────────────────────────
+
+  async function runGetActionResults() {
+    setSpinner('c4-results', true);
+    const rid = capturedRequestId;
+    if (!rid) {
+      showResp('c4-results', {note:'Run ⚡ Full Pipeline first to generate an execution result.'}, '—', 0);
+      setSpinner('c4-results', false); return;
+    }
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/results/'+rid);
+      const d = await r.json();
+      const payload = d.action_results
+        ? { action_results: d.action_results, overall_success: d.overall_success }
+        : d;
+      showResp('c4-results', payload, r.status+(r.ok?' OK':''), Date.now()-t0);
+    } catch(e) { showResp('c4-results', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('c4-results', false);
+  }
+
+  // ── Step 6 (Result & Audit) ───────────────────────────────────────────────────
+
+  async function runGetResult() {
+    setSpinner('result', true);
+    const rid = capturedRequestId || 'c3d4e5f6-a1b2-0987-dcba-fedcba987654';
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/results/'+rid);
+      showResp('result', await r.json(), r.status+(r.ok?' OK':''), Date.now()-t0);
+    } catch(e) { showResp('result', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('result', false);
+  }
+
+  async function runListAudit() {
+    setSpinner('audit-list', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/audit?pilot=INDUSTRY_4');
+      const d = await r.json();
+      showResp('audit-list', d, r.status+' OK', Date.now()-t0);
+      if (d.records && d.records.length > 0) {
+        capturedAuditId = d.records[0].audit_id;
+        const box = document.getElementById('audit-id-box');
+        box.style.display='block';
+        box.innerHTML='✅ <strong>audit_id captured:</strong> <code style="color:#58a6ff;">'+capturedAuditId+'</code> — use it in Get by ID below.';
+      }
+    } catch(e) { showResp('audit-list', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('audit-list', false);
+  }
+
+  async function runGetAuditById() {
+    setSpinner('audit-get', true);
+    const aid = capturedAuditId || 'aud-SIE-0074';
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/audit/'+aid);
+      showResp('audit-get', await r.json(), r.status+(r.ok?' OK':''), Date.now()-t0);
+    } catch(e) { showResp('audit-get', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('audit-get', false);
+  }
+
+  // ── Step 6 ───────────────────────────────────────────────────────────────────
+
+  async function runProfiles() {
+    setSpinner('profiles', true); setSpinner('profiles2', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/profiles');
+      const d = await r.json(); const lat = Date.now()-t0;
+      showResp('profiles', d, r.status+' OK', lat);
+      showResp('profiles2', d, r.status+' OK', lat);
+    } catch(e) {
+      showResp('profiles', {error:e.message}, 'Error', Date.now()-t0);
+      showResp('profiles2', {error:e.message}, 'Error', Date.now()-t0);
+    }
+    setSpinner('profiles', false); setSpinner('profiles2', false);
+  }
+
+  async function runUnknownPilot() {
+    const payload = readTA('req-unknown-pilot');
+    if (!payload) return;
+    setSpinner('unknown-pilot', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL+'/api/v1/events', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      showResp('unknown-pilot', d, r.status+(r.ok?' OK':' Error'), Date.now()-t0);
+    } catch(e) { showResp('unknown-pilot', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('unknown-pilot', false);
+  }
+
+  // ── Rego panel refresh ──────────────────────────────────────────────────────
+
+  function refreshRegoPanel() {
+    const nlEl = document.getElementById('rego-nl-body');
+    const outEl = document.getElementById('rego-output-body');
+    const hint = document.getElementById('rego-nl-display');
+    if (capturedRegoOutput) {
+      if (hint) hint.style.display = 'none';
+      if (nlEl)  nlEl.textContent  = capturedRegoNl || '(none)';
+      if (outEl) outEl.textContent = capturedRegoOutput;
+    }
+  }
+
+  // ── API Explorer functions ──────────────────────────────────────────────────
+
+  function xVal(id) { return (document.getElementById(id)?.value || '').trim(); }
+
+  async function xGet(spinId, respId, url) {
+    setSpinner(spinId, true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + url);
+      showResp(respId, await r.json(), r.status+(r.ok?' OK':''), Date.now()-t0);
+    } catch(e) { showResp(respId, {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner(spinId, false);
+  }
+
+  async function xRunListEvents() {
+    const pilot = xVal('param-list-events-pilot') || 'INDUSTRY_4';
+    const limit = xVal('param-list-events-limit') || '10';
+    await xGet('x-list-events', 'x-list-events', `/api/v1/events?pilot=${encodeURIComponent(pilot)}&limit=${limit}`);
+  }
+
+  async function xRunGetEvent() {
+    const eid = xVal('param-get-event-id') || capturedEventId;
+    if (!eid) { alert('Enter an event_id or run Step 1 first.'); return; }
+    await xGet('x-get-event', 'x-get-event', `/api/v1/events/${encodeURIComponent(eid)}`);
+  }
+
+  async function xRunListAR() {
+    const pilot = xVal('param-list-ar-pilot') || 'INDUSTRY_4';
+    await xGet('x-list-ar', 'x-list-ar', `/api/v1/action-requests?pilot=${encodeURIComponent(pilot)}`);
+  }
+
+  async function xRunGetAR() {
+    const rid = xVal('param-get-ar-id') || capturedRequestId;
+    if (!rid) { alert('Enter a request_id or run Step 2 / ⚡ Full Pipeline first.'); return; }
+    await xGet('x-get-ar', 'x-get-ar', `/api/v1/action-requests/${encodeURIComponent(rid)}`);
+  }
+
+  async function xRunGetResult() {
+    const rid = xVal('param-get-result-id') || capturedRequestId;
+    if (!rid) { alert('Enter a request_id or run ⚡ Full Pipeline first.'); return; }
+    await xGet('x-get-result', 'x-get-result', `/api/v1/results/${encodeURIComponent(rid)}`);
+  }
+
+  async function xRunListAudit() {
+    const pilot = xVal('param-list-audit-pilot') || 'INDUSTRY_4';
+    setSpinner('x-list-audit', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + `/api/v1/audit?pilot=${encodeURIComponent(pilot)}`);
+      const d = await r.json();
+      showResp('x-list-audit', d, r.status+' OK', Date.now()-t0);
+      if (d.records && d.records.length > 0) {
+        capturedAuditId = d.records[0].audit_id;
+        const box = document.getElementById('x-audit-id-box');
+        box.style.display='block';
+        box.innerHTML='✅ <strong>First audit_id captured:</strong> <code style="color:#ffa657;">'+capturedAuditId+'</code>';
+        const aidInput = document.getElementById('param-get-audit-id');
+        if (aidInput) aidInput.value = capturedAuditId;
+      }
+    } catch(e) { showResp('x-list-audit', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('x-list-audit', false);
+  }
+
+  async function xRunGetAudit() {
+    const aid = xVal('param-get-audit-id') || capturedAuditId;
+    if (!aid) { alert('Enter an audit_id or run List above first.'); return; }
+    await xGet('x-get-audit', 'x-get-audit', `/api/v1/audit/${encodeURIComponent(aid)}`);
+  }
+
+  async function xRunRegoResult() {
+    const rid = xVal('param-rego-result-id') || capturedRequestId;
+    if (!rid) { alert('Enter a request_id or run ⚡ Full Pipeline first.'); return; }
+    setSpinner('rego-result', true);
+    const t0 = Date.now();
+    try {
+      const r = await fetch(BASE_URL + `/api/v1/results/${encodeURIComponent(rid)}`);
+      const d = await r.json();
+      showResp('rego-result', d.policy_translation || {note:'No policy_translation in this result — run ⚡ Full Pipeline with a policy_update field.'}, r.status+(r.ok?' OK':''), Date.now()-t0);
+      if (d.policy_translation) {
+        capturedRegoNl = d.policy_translation.nl_input || null;
+        capturedRegoOutput = d.policy_translation.rego_output || null;
+        refreshRegoPanel();
+      }
+    } catch(e) { showResp('rego-result', {error:e.message}, 'Error', Date.now()-t0); }
+    setSpinner('rego-result', false);
+  }
+
+  mountEidRows();
+  goTo(0);
+</script>
+
+</body></html>
