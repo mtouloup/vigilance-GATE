@@ -37,8 +37,10 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from vigilance.integrations import get_registry
@@ -85,6 +87,17 @@ class ActionRequestPayload(BaseModel):
 
 class IntegrationUpdatePayload(BaseModel):
     base_url: str
+
+
+_UI_PATH = Path(__file__).parent.parent.parent / "vigilance_t53_demo.html"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def serve_ui() -> HTMLResponse:
+    """Serve the T5.3 demo UI at the root path."""
+    if not _UI_PATH.exists():
+        return HTMLResponse("<h1>UI not found</h1><p>vigilance_t53_demo.html is missing from the app root.</p>", status_code=404)
+    return HTMLResponse(_UI_PATH.read_text())
 
 
 @app.get("/api/v1/health", tags=["System"])
