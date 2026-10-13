@@ -2,7 +2,7 @@
 
 **VIGILANCE — T5.3: Agentic Wrapper Framework for Cybersecurity Technologies**
 
-GAP project ref: GAP-101249737 | Lead: INNOV | Pilots: OTE · Siemens · Port of Rotterdam · CaixaBank
+GAP project ref: GAP-101249737 | WP5 Task Lead: INNOV-ACTS | INNOV pilots: OTE (T6.3 · Greece) · Siemens (T6.5 · Romania)
 
 ---
 
@@ -10,24 +10,20 @@ GAP project ref: GAP-101249737 | Lead: INNOV | Pilots: OTE · Siemens · Port of
 
 `vigilance-gate` is the Python implementation of the T5.3 Agentic Wrapper Framework. It is the
 operational execution bridge between the WP5 intelligence layer (T5.1 RAG, T5.2 agents,
-T5.4 orchestration) and the real cybersecurity tools deployed across all four VIGILANCE pilot
-environments.
+T5.4 orchestration) and the real cybersecurity tools deployed across VIGILANCE pilot environments.
 
 It provides a **5-component pipeline** that ingests raw security events, enforces safety guardrails,
 translates natural-language policy changes to OPA/Rego, and dispatches remediation actions —
-operating exclusively in **INTEGRATED mode** alongside T5.4 (orchestration):
+operating exclusively in **INTEGRATED mode** alongside T5.4 (orchestration).
 
-| Pilot | Sector | Partner | Threats |
-|---|---|---|---|
-| #1 | TELECOM | OTE_GR (Greece) | Credential stuffing, brute-force, SS7/BGP attacks |
-| #2 | MARITIME | Rotterdam_NL (Netherlands) | AIS/GPS spoofing, cargo system intrusions, port IT/OT |
-| #3 | FINANCE | CaixaBank_ES (Spain) | Account takeover, payment fraud, insider threats |
-| #4 | INDUSTRY_4 | Siemens_RO (Romania) | OT anomalies, PLC lateral movement, SCADA zone isolation |
-
-T5.3 is a **single multi-pilot container** that serves all four GA pilots simultaneously. Pilot
+T5.3 is a **single multi-pilot container** that handles all four GA sectors simultaneously. Pilot
 detection happens in C1 (parser heuristics + LLM fallback); the correct Sector Profile (C6) and
-C4 tool adapter set are selected per-event automatically. No configuration change or restart
-is needed to switch between pilots — all four profiles and adapter sets are loaded at startup.
+C4 tool adapter set are selected per-event automatically. No configuration change or restart is
+needed to switch between sectors — all four profiles and adapter sets are loaded at startup.
+
+**INNOV validation scope:** OTE (TELECOM, Greece) and Siemens (INDUSTRY_4, Romania). Sector
+profiles for MARITIME and FINANCE exist to satisfy the GA requirement for transferable wrappers
+across all four pilots; real adapter implementations for those sectors are post-INNOV scope.
 
 ---
 
@@ -56,22 +52,21 @@ is needed to switch between pilots — all four profiles and adapter sets are lo
                               ③ proportionality ≤ 5     ④⑤ OT safety (INDUSTRY_4)
                                    │ GuardrailCheck → APPROVED / REJECTED / ESCALATE
                                    ▼
-                          C3  Policy Translation  (Mistral Nemo — conditional)
+                          C3  Policy Translation  (Mistral Nemo 12B — conditional)
                               NL → OPA/Rego (few-shot + OPA validation + retry)
                                    │
                                    ├──► t53.policy_updates  ──► downstream consumer TBD
                                    └──► t53.actions.dispatch  ──► pilot tools (fire-and-forget)
                                              C4  Tool Adapter Layer  (no LLM)
-                                                 OTE:       ote_siem · ote_iam · ote_ids
-                                                 Rotterdam: port_siem · port_iam · port_ops
-                                                 CaixaBank: bank_siem · bank_iam · fraud_engine
-                                                 Siemens:   industrial_siem · ot_iam · scada_opcua
+                                                 OTE:      ote_siem · ote_iam · ote_ids
+                                                 Siemens:  industrial_siem · ot_iam · scada_opcua
+                                                 MARITIME · FINANCE: stub adapters (GA scope)
                                    ▼
                           C5  Audit Log + ExecutionResult
                               AuditLog per request · WorkflowCSVLogger → data/workflow_audit.csv
                                    │
    Message Broker  ◄──────────────┘
-   t53.results  ──►  T5.4 (incident closure) · T5.2 (agent improvement)
+   t53.results  ──►  T5.4 (incident closure) · T5.2 (agent feedback)
 ```
 
 ---
@@ -82,7 +77,7 @@ is needed to switch between pilots — all four profiles and adapter sets are lo
 |---|---|---|---|
 | C1 | Event Ingestion & Normalization | Mistral 7B (fallback only) | Parses CEF, ECS, OT JSON, syslog → `CanonicalEvent`; publishes to `t53.canonical_events` |
 | C3 | Action & Policy Execution | Mistral Nemo 12B (conditional) | Receives `ActionRequest` from T5.4; compiles NL policy to OPA/Rego when `policy_update` present |
-| C4 | Tool Adapter Layer | None | 12 plugin-based deterministic adapters for all four pilots; fire-and-forget via `t53.actions.dispatch` |
+| C4 | Tool Adapter Layer | None | 12 plugin-based deterministic adapters across four sectors; fire-and-forget via `t53.actions.dispatch` |
 | C5 | Safety Gate & Audit | Mistral 7B (ESCALATE only) | Pre-execution guardrail (5 checks) + AuditLog + WorkflowCSVLogger |
 | C6 | Sector Profile Manager | N/A | Loads 4 YAML profiles at startup; injects per-sector config into all components |
 
@@ -105,14 +100,17 @@ no model download required, all tests run offline.
 
 ```
 vigilance-GATE/
+├── vigilance_t53_demo.html     Live demo UI — served at http://localhost:8000/
+├── integrations.yaml           Integration endpoint registry (WP5 tasks + pilot tools)
 ├── vigilance/                  Python package
 │   ├── pipeline.py             T53Pipeline — main entry point
 │   ├── service.py              Broker consumer service
 │   ├── main.py                 Combined entrypoint: REST API + broker consumer
+│   ├── integrations.py         IntegrationsRegistry — partner endpoint management
 │   ├── workflow_logger.py      WorkflowCSVLogger — per-execution CSV audit trail
 │   ├── db.py                   Database — SQLite persistence layer (4 tables)
 │   ├── api/
-│   │   └── app.py              FastAPI REST API (port 8000, 15 endpoints)
+│   │   └── app.py              FastAPI REST API (port 8000, 20 endpoints)
 │   ├── llm/
 │   │   ├── base.py             LLMProvider ABC + StubLLMProvider (tests)
 │   │   ├── ollama_provider.py  OllamaLLMProvider (mistral:7b + mistral-nemo)
@@ -133,23 +131,24 @@ vigilance-GATE/
 │       ├── c3_execution/       ActionExecutor + PolicyTranslator (few-shot NL→Rego + OPA validation)
 │       ├── c4_adapters/        ToolAdapter ABC + 12 plugins
 │       │   ├── telecom/        ote_siem · ote_iam · ote_ids
-│       │   ├── maritime/       port_siem · port_iam · port_ops
-│       │   ├── finance/        bank_siem · bank_iam · fraud_engine
+│       │   ├── maritime/       port_siem · port_iam · port_ops  (GA transferability)
+│       │   ├── finance/        bank_siem · bank_iam · fraud_engine  (GA transferability)
 │       │   └── industry4/      industrial_siem · ot_iam · scada_opcua
 │       ├── c5_safety/          SafetyGate + AuditLog
 │       └── c6_profiles/        ProfileManager + SectorProfile dataclass
 ├── profiles/                   Sector YAML config files
-│   ├── telecom.yaml            Pilot #1 OTE/GR
-│   ├── maritime.yaml           Pilot #2 Rotterdam/NL
-│   ├── finance.yaml            Pilot #3 CaixaBank/ES
-│   └── industry4.yaml          Pilot #4 Siemens/RO
+│   ├── telecom.yaml            Pilot #1 OTE/GR (confidence_threshold: 0.80)
+│   ├── maritime.yaml           MARITIME sector (GA transferability)
+│   ├── finance.yaml            FINANCE sector (confidence_threshold: 0.85, GA transferability)
+│   └── industry4.yaml          Pilot #4 Siemens/RO (ot_safety_flag: true)
 ├── schemas/                    JSON Schema definitions
 │   ├── models/                 Auto-generated from Pydantic models
 │   ├── broker/topics.yaml      Broker integration interface spec
 │   └── profiles/               Sector profile YAML schema
 ├── data/                       Generated output (mounted volume)
 │   ├── workflow_audit.csv      Per-execution pipeline telemetry (C1 → C5 → C3 → C4)
-│   └── vigilance.db            SQLite store — events, action_requests, results, audit_records
+│   ├── vigilance.db            SQLite store — events, action_requests, results, audit_records
+│   └── integrations_overrides.yaml  Runtime partner URL overrides (written by PATCH /integrations)
 ├── tools/
 │   ├── publish_event.sh        Example producer script for pilot partners
 │   └── simulate_t54.sh         Simulates T5.4 orchestrator (INTEGRATED mode testing)
@@ -160,10 +159,10 @@ vigilance-GATE/
 ├── tests/                      115 tests across 10 files
 │   ├── test_c1_ingestion.py … test_c6_profiles.py
 │   └── scenarios/
-│       ├── test_scenario_a_ote.py          Full OTE end-to-end
-│       ├── test_scenario_b_siemens.py      Full Siemens end-to-end
-│       ├── test_scenario_c_rotterdam.py    Full Rotterdam end-to-end
-│       └── test_scenario_d_caixabank.py    Full CaixaBank end-to-end
+│       ├── test_scenario_a_ote.py        Full OTE end-to-end
+│       ├── test_scenario_b_siemens.py    Full Siemens end-to-end
+│       ├── test_scenario_c_rotterdam.py  MARITIME sector (GA transferability)
+│       └── test_scenario_d_caixabank.py  FINANCE sector (GA transferability)
 ├── Dockerfile
 └── docker-compose.yml
 ```
@@ -198,12 +197,13 @@ Startup order:
 | `vigilance-rabbitmq` | RabbitMQ 3.13 — queues pre-declared at startup |
 | `vigilance-ollama` | Ollama LLM server — serves mistral:7b and mistral-nemo |
 | `vigilance-ollama-init` | One-shot model downloader (exits after pull) |
-| `vigilance-gate` | **T5.3 Agentic Wrapper Framework** — all four GA pilots in a single container |
+| `vigilance-gate` | **T5.3 Agentic Wrapper Framework** — all four GA sectors in a single container |
 | `vigilance-dozzle` | Real-time log viewer → http://localhost:9999 |
 
 Generated files on your host:
-- `./data/workflow_audit.csv` — one row per completed pipeline execution (see [Workflow Audit CSV](#workflow-audit-csv))
-- `./data/vigilance.db` — SQLite store for all pipeline artefacts; survives container restarts
+- `./data/workflow_audit.csv` — one row per completed pipeline execution
+- `./data/vigilance.db` — SQLite store for all pipeline artefacts; survives restarts
+- `./data/integrations_overrides.yaml` — partner URL overrides saved via the integration registry UI
 
 ### Reuse Models Already on Your Host
 
@@ -227,12 +227,87 @@ deploy:
 
 ---
 
+## Demo UI
+
+After `docker compose up --build`, open **http://localhost:8000** in your browser.
+
+The demo UI (`vigilance_t53_demo.html`) is served directly by FastAPI at the root path. It is a
+live interactive walkthrough of the full T5.3 pipeline, with 11 panels:
+
+| Panel | Name | What it does |
+|---|---|---|
+| 0 | The Incident | Presents the threat scenario (Siemens OT anomaly) |
+| 1 | C1 — Ingestion | Submits a raw event and shows the normalised CanonicalEvent |
+| 2 | Store ActionRequest | Stores an ActionRequest via the decoupled submit endpoint |
+| 3 | C5 — Guardrail | Runs the safety guardrail and shows the verdict |
+| 4 | Full Pipeline (T5.4) | Runs the complete C5+C3+C4 pipeline in one call |
+| 5 | C4 — Tool Dispatch | Shows the verb→plugin→tool routing table and fire-and-forget dispatch |
+| 6 | Result & Audit | Retrieves the ExecutionResult and AuditRecord |
+| 7 | Cross-Pilot Transfer | Switches the scenario to the TELECOM sector |
+| 8 | API Explorer | Interactive REST endpoint browser (all read endpoints) |
+| 9 | OPA / Rego | Shows the NL→Rego translation output (C3 / Mistral Nemo 12B) |
+| 10 | Integrations | Partner endpoint registry — declare and ping all external API URLs |
+
+All panels make live calls to `http://localhost:8000/api/...` — the UI and API share the same
+origin so there are no CORS restrictions.
+
+---
+
+## Integration Registry
+
+`integrations.yaml` declares every external party T5.3 connects to. All `base_url` fields are
+empty by default — fill them in when a partner shares their endpoint.
+
+| Partner | Category | Description |
+|---|---|---|
+| T5.3 Gate (self) | self | T5.3's own base URL — resolved from `API_HOST` / `API_PORT` |
+| T5.4 Orchestrator (GFT) | wp5_task | Receives CanonicalEvents; dispatches ActionRequests |
+| T5.1 Knowledge Engine (AEGIS) | wp5_task | RAG context consumed by T5.4 |
+| T5.2 Agent Training (GFT) | wp5_task | Receives ExecutionResults for agent MLOps feedback |
+| OTE SIEM (Splunk) | pilot_tool | `block_ip · query_logs · create_incident` |
+| OTE IAM (Active Directory) | pilot_tool | `revoke_session · query_sessions` |
+| OTE IDS (CrowdStrike) | pilot_tool | `notify_soc` |
+| Siemens SCADA OPC-UA | pilot_tool | `isolate_plc · notify_soc · update_zt_policy` |
+| Siemens OT IAM | pilot_tool | `revoke_ot_session · query_sessions` |
+| Siemens Industrial SIEM (Splunk) | pilot_tool | `query_logs · block_ip · create_incident` |
+
+### Declaring an endpoint
+
+**Via the UI (Panel 10):** paste the base URL in the input field and click Save.
+
+**Via the API:**
+```bash
+curl -X PATCH http://localhost:8000/api/v1/integrations/t54_orchestrator \
+  -H "Content-Type: application/json" \
+  -d '{"base_url": "http://t54-host:9000"}'
+```
+
+**Via env var** (read at startup, highest precedence):
+```bash
+INTEGRATION_T54_ORCHESTRATOR_URL=http://t54-host:9000 docker compose up
+```
+
+URLs updated via the API or UI are persisted to `data/integrations_overrides.yaml` and survive
+container restarts. Env vars override everything and are read at startup only.
+
+### Probing reachability
+
+```bash
+# Ping one partner
+curl -X POST http://localhost:8000/api/v1/integrations/t54_orchestrator/check
+
+# List all declared endpoints
+curl http://localhost:8000/api/v1/integrations
+```
+
+---
+
 ## Send a Test Event
 
 ### Option A — `publish_event.sh` (recommended for pilot partners)
 
-`tools/publish_event.sh` is the reference producer. It wraps the raw event and publishes via the
-RabbitMQ Management HTTP API (no AMQP client required — just `curl`).
+`tools/publish_event.sh` wraps the raw event and publishes via the RabbitMQ Management HTTP
+API (no AMQP client required — just `curl`).
 
 **Pilot #1 — OTE / TELECOM (Greece)**
 ```bash
@@ -243,28 +318,6 @@ RabbitMQ Management HTTP API (no AMQP client required — just `curl`).
 # SS7 signaling anomaly (syslog)
 ./tools/publish_event.sh \
   'Jan 15 03:22:11 ss7gw-01 SS7GW: ALERT src_gt=491760000000 dst=nms-01 msg_type=SRI_SM anomaly=location_tracking_attempt severity=HIGH'
-```
-
-**Pilot #2 — Port of Rotterdam / MARITIME (Netherlands)**
-```bash
-# AIS position spoofing (JSON)
-./tools/publish_event.sh \
-  '{"vessel_id":"VESSEL-042","ais_mmsi":"244820000","port_zone":"Berth-7","anomaly":"ais_position_spoofing","severity":"HIGH"}'
-
-# Cargo system intrusion (JSON)
-./tools/publish_event.sh \
-  '{"vessel_id":"VESSEL-117","cargo_system_id":"CMS-ROT-04","port_zone":"Container-Terminal-A","anomaly":"unauthorized_cargo_manifest_access","severity":"CRITICAL"}'
-```
-
-**Pilot #3 — CaixaBank / FINANCE (Spain)**
-```bash
-# Account takeover attempt (JSON)
-./tools/publish_event.sh \
-  '{"account_id":"ACC-ES-0099182","transaction_id":"TXN-2026-887341","branch_id":"BCN-CENTRAL","anomaly":"account_takeover_attempt","fraud_score":0.94,"severity":"HIGH"}'
-
-# High-value payment fraud (JSON)
-./tools/publish_event.sh \
-  '{"account_id":"ACC-ES-0041872","transaction_id":"TXN-2026-553901","branch_id":"MAD-NORTE","anomaly":"payment_fraud_high_value","fraud_score":0.91,"severity":"CRITICAL"}'
 ```
 
 **Pilot #4 — Siemens / INDUSTRY_4 (Romania)**
@@ -372,7 +425,7 @@ docker run -d --name rabbitmq \
   rabbitmq:3.13-management-alpine
 ```
 
-**Step 3** — Start T5.3 (REST API + broker consumer, all pilots):
+**Step 3** — Start T5.3 (REST API + broker consumer, all sectors):
 
 ```bash
 AMQP_URL=amqp://vigilance:vigilance@localhost:5672/ \
@@ -380,7 +433,8 @@ OLLAMA_BASE_URL=http://localhost:11434 \
 python -m vigilance.main
 ```
 
-Swagger UI: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
+UI: [http://localhost:8000](http://localhost:8000)  
+Swagger: [http://localhost:8000/api/docs](http://localhost:8000/api/docs)
 
 For broker-only (no REST API):
 ```bash
@@ -391,13 +445,6 @@ python -m vigilance.service
 
 ```bash
 VIGILANCE_DRY_RUN=true python -m vigilance.main
-```
-
-Or in Python:
-
-```python
-from vigilance.pipeline import T53Pipeline
-pipeline = T53Pipeline(dry_run=True)
 ```
 
 Dry-run: C5 guardrail and AuditLog run normally; broker dispatch is skipped; all `ActionResult.plugin` values are `"dry_run"`.
@@ -418,6 +465,8 @@ Dry-run: C5 guardrail and AuditLog run normally; broker dispatch is skipped; all
 | `API_PORT` | `8000` | REST API port |
 | `VIGILANCE_CONFIDENCE_THRESHOLD` | `0.80` | Override default confidence threshold (profile value takes precedence) |
 | `VIGILANCE_PROTECTED_RANGES` | *(unset)* | Comma-separated CIDR list of hosts that must never be actioned |
+| `INTEGRATIONS_OVERRIDES_PATH` | `data/integrations_overrides.yaml` | Path for persisted integration URL overrides |
+| `INTEGRATION_<ID_UPPER>_URL` | *(unset)* | Startup-time URL override for a specific partner (e.g. `INTEGRATION_T54_ORCHESTRATOR_URL`) |
 
 ---
 
@@ -425,9 +474,13 @@ Dry-run: C5 guardrail and AuditLog run normally; broker dispatch is skipped; all
 
 T5.3 operates exclusively in INTEGRATED mode with two public pipeline methods:
 
-**`ingest_event(raw)`** — C1: normalise the raw event into a `CanonicalEvent` and publish to `t53.canonical_events`. T5.4 then enriches it with T5.1 RAG context, selects a T5.2 agent, and dispatches an `ActionRequest` back to T5.3.
+**`ingest_event(raw)`** — C1: normalise the raw event into a `CanonicalEvent` and publish to
+`t53.canonical_events`. T5.4 then enriches it with T5.1 RAG context, selects a T5.2 agent, and
+dispatches an `ActionRequest` back to T5.3.
 
-**`execute_action_request(dict)`** — C5+C3+C4: apply guardrails, optionally compile a NL policy update to OPA/Rego, dispatch actions to pilot tools via the broker, close the audit record, and return an `ExecutionResult`.
+**`execute_action_request(dict)`** — C5+C3+C4: apply guardrails, optionally compile a NL policy
+update to OPA/Rego, dispatch actions to pilot tools via the broker, close the audit record, and
+return an `ExecutionResult`.
 
 ```
 pilot.events.raw ──► C1 normalize ──► t53.canonical_events ──► T5.4 orchestrator
@@ -456,59 +509,65 @@ C5 AuditLog.close() + WorkflowCSVLogger.append() ──► data/workflow_audit.c
 
 ---
 
-## REST API (T5.6 Integration)
+## REST API
 
-T5.3 exposes a REST API on port **8000** for T5.6 Agentic ZTA Platform Integration and
-any external system that cannot use the RabbitMQ broker directly.
+T5.3 exposes a REST API on port **8000**. Interactive docs at [http://localhost:8000/api/docs](http://localhost:8000/api/docs).
 
 ### Endpoints
 
+**UI**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Demo UI — `vigilance_t53_demo.html` served directly |
+
 **System**
 
-| Method | Path | Response | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | 200 | Liveness check — returns loaded pilots and timestamp |
-| `GET` | `/api/v1/profiles` | 200 | All four sector profiles (plugins, thresholds, OT flags) |
-| `GET` | `/api/v1/formats` | 200 | Supported C1 log formats in parser priority order, with detection signals and examples |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/health` | Liveness check — returns loaded sectors and timestamp |
+| `GET` | `/api/v1/profiles` | All four sector profiles (plugins, thresholds, OT flags) |
+| `GET` | `/api/v1/formats` | Supported C1 log formats in parser priority order |
 
 **Events (C1)**
 
-| Method | Path | Response | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/events` | **202 Accepted** | Submit raw event → C1 normalize → SQLite → broker. Returns full `CanonicalEvent` |
-| `GET` | `/api/v1/events` | 200 | List all ingested CanonicalEvents from SQLite. Supports `?pilot=` and `?limit=` |
-| `GET` | `/api/v1/events/{event_id}` | 200 | Retrieve a single CanonicalEvent by ID |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/events` | Submit raw event → C1 normalize → SQLite → broker. Returns full `CanonicalEvent` (202) |
+| `GET` | `/api/v1/events` | List CanonicalEvents from SQLite. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/events/{event_id}` | Single CanonicalEvent by ID |
 
 **Execution (C5 + C3 + C4)**
 
-| Method | Path | Response | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/action-requests` | 200 / 207 | Full pipeline: C5 guardrail → C3 policy → C4 dispatch → audit → result |
-| `GET` | `/api/v1/action-requests` | 200 | List stored ActionRequests from SQLite. Supports `?pilot=` and `?limit=` |
-| `GET` | `/api/v1/action-requests/{request_id}` | 200 | Retrieve a single stored ActionRequest |
-| `POST` | `/api/v1/action-requests/submit` | **202 Accepted** | Store ActionRequest without executing — for manual/decoupled flow |
-| `POST` | `/api/v1/action-requests/{request_id}/guardrail` | 200 | Run C5 guardrail only on a stored request. Returns `GuardrailCheck` verdict; no dispatch |
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/v1/action-requests` | Full pipeline: C5 → C3 → C4 → audit → result (200/207) |
+| `GET` | `/api/v1/action-requests` | List stored ActionRequests. Supports `?pilot=` and `?limit=` |
+| `GET` | `/api/v1/action-requests/{request_id}` | Single stored ActionRequest |
+| `POST` | `/api/v1/action-requests/submit` | Store ActionRequest without executing (202) |
+| `POST` | `/api/v1/action-requests/{request_id}/guardrail` | C5 guardrail only — returns `GuardrailCheck`; no dispatch |
 
 **Results**
 
-| Method | Path | Response | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/results/{request_id}` | 200 | ExecutionResult for a completed request. Includes `policy_translation` if Rego was generated |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/results/{request_id}` | ExecutionResult + `policy_translation` if Rego was generated |
 
 **Audit**
 
-| Method | Path | Response | Description |
-|---|---|---|---|
-| `GET` | `/api/v1/audit` | 200 | List all AuditRecords from SQLite. Supports `?pilot=` |
-| `GET` | `/api/v1/audit/{audit_id}` | 200 | Retrieve a single AuditRecord by ID (e.g. `aud-SIE-0074`) |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/audit` | List AuditRecords from SQLite. Supports `?pilot=` |
+| `GET` | `/api/v1/audit/{audit_id}` | Single AuditRecord by ID (e.g. `aud-SIE-0074`) |
 
-### Interactive Documentation
+**Integration Registry**
 
-| UI | URL |
-|---|---|
-| **Swagger UI** | [http://localhost:8000/api/docs](http://localhost:8000/api/docs) |
-| **ReDoc** | [http://localhost:8000/api/redoc](http://localhost:8000/api/redoc) |
-| **OpenAPI JSON** | [http://localhost:8000/api/openapi.json](http://localhost:8000/api/openapi.json) |
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/integrations` | List all declared partner endpoints from the registry |
+| `GET` | `/api/v1/integrations/{partner_id}` | Single partner entry |
+| `PATCH` | `/api/v1/integrations/{partner_id}` | Update a partner's `base_url` (persisted to disk) |
+| `POST` | `/api/v1/integrations/{partner_id}/check` | Probe reachability of a partner endpoint |
 
 ### Example — Submit Event via REST
 
@@ -520,9 +579,6 @@ curl -X POST http://localhost:8000/api/v1/events \
 
 # List ingested events (filter by pilot)
 curl "http://localhost:8000/api/v1/events?pilot=TELECOM&limit=10"
-
-# Retrieve a specific event
-curl http://localhost:8000/api/v1/events/<event_id>
 
 curl http://localhost:8000/api/v1/health
 curl http://localhost:8000/api/v1/profiles
@@ -588,7 +644,7 @@ docker exec vigilance-rabbitmq \
   rabbitmqadmin get queue=t53.results ackmode=ack_requeue_true
 ```
 
-**Manual dispatch (all 4 pilots):**
+**Manual dispatch:**
 
 ```bash
 # TELECOM — OTE/Greece
@@ -596,18 +652,6 @@ docker exec vigilance-rabbitmq \
   --event-id evt-ote-001 --pilot OTE_GR \
   --actions block_ip,revoke_session,notify_soc \
   --confidence 0.96
-
-# MARITIME — Port of Rotterdam
-./tools/simulate_t54.sh --no-consume \
-  --event-id evt-rot-001 --pilot Rotterdam_NL \
-  --actions block_vessel_access,quarantine_cargo_system,notify_port_authority,notify_soc \
-  --confidence 0.88
-
-# FINANCE — CaixaBank
-./tools/simulate_t54.sh --no-consume \
-  --event-id evt-cai-001 --pilot CaixaBank_ES \
-  --actions freeze_account,block_transaction,notify_fraud_team,notify_soc \
-  --confidence 0.93
 
 # INDUSTRY_4 — Siemens/Romania (with NL policy update → Rego)
 ./tools/simulate_t54.sh --no-consume \
@@ -650,52 +694,17 @@ CEF:0|OTE-IDS|SOCv3|2.0|200|AUTH_BRUTE_FORCE|9|src=91.108.4.12 dst=nms-01 cnt=23
 
 **Pipeline actions:** `isolate_plc` (safe-state enforced) → `revoke_ot_session` → `notify_soc` → `update_zt_policy`
 
-**OT safety:** The SCADA plugin (`scada_opcua`) enforces `mode="safe-state"` on `isolate_plc`.
+**OT safety:** The SCADA plugin (`scada_opcua`) hard-enforces `mode="safe-state"` on `isolate_plc`.
 `ActionExecutor._build_params()` injects this automatically — T5.4 does not need to carry it.
+If `mode != "safe-state"` the plugin raises `ValueError` and refuses to execute.
 
 **Audit ID:** `aud-SIE-0074`
 
 ---
 
-### Scenario C — Port of Rotterdam AIS Spoofing (Pilot #2 · MARITIME)
-
-**Threat:** AIS position spoofing on VESSEL-042 at Berth-7 — GPS coordinates inconsistent with radar.
-
-**Input (JSON):**
-```json
-{"vessel_id": "VESSEL-042", "ais_mmsi": "244820000", "port_zone": "Berth-7",
- "anomaly": "ais_position_spoofing", "severity": "HIGH"}
-```
-
-**Pipeline actions:** `block_vessel_access` → `quarantine_cargo_system` → `notify_port_authority` → `notify_soc`
-
-**Audit ID:** `aud-ROT-0001`
-
----
-
-### Scenario D — CaixaBank Account Takeover (Pilot #3 · FINANCE)
-
-**Threat:** Account takeover attempt on ACC-ES-0099182 — fraud score 0.94.
-
-**Input (JSON):**
-```json
-{"account_id": "ACC-ES-0099182", "transaction_id": "TXN-2026-887341",
- "branch_id": "BCN-CENTRAL", "anomaly": "account_takeover_attempt",
- "fraud_score": 0.94, "severity": "HIGH"}
-```
-
-**Pipeline actions:** `freeze_account` → `block_transaction` → `notify_fraud_team` → `notify_soc`
-
-**Note:** FINANCE uses `confidence_threshold: 0.85` (from `finance.yaml`) rather than the 0.80
-default — higher bar for auto-action in regulated PSD2/DORA environments.
-
-**Audit ID:** `aud-CAI-0001`
-
----
-
 ## C4 Adapter Vocabulary
 
-All 12 adapters are stubs in the current implementation; real connections to pilot tools are planned for M10–M15.
+All 12 adapters are stubs; real connections to pilot tools are planned for M10–M15 (OTE and Siemens only).
 
 ### OTE (Telecom)
 
@@ -717,25 +726,11 @@ All 12 adapters are stubs in the current implementation; real connections to pil
 
 **Verb union:** `isolate_plc`, `notify_soc`, `update_zt_policy`, `revoke_ot_session`, `query_sessions`, `query_logs`, `block_ip`, `create_incident`
 
-### Port of Rotterdam (Maritime)
+### MARITIME and FINANCE (GA transferability)
 
-| `plugin_name` | Wrapped tool | `supported_actions` |
-|---|---|---|
-| `port_siem` | Elastic SIEM | `block_vessel_access`, `query_logs`, `update_vessel_acl` |
-| `port_iam` | Keycloak | `revoke_session`, `query_sessions`, `notify_soc` |
-| `port_ops` | Port Operations | `quarantine_cargo_system`, `notify_port_authority`, `notify_soc`, `update_vessel_acl` |
-
-**Verb union:** `block_vessel_access`, `query_logs`, `update_vessel_acl`, `revoke_session`, `query_sessions`, `notify_soc`, `quarantine_cargo_system`, `notify_port_authority`
-
-### CaixaBank (Finance)
-
-| `plugin_name` | Wrapped tool | `supported_actions` |
-|---|---|---|
-| `bank_siem` | Elastic SIEM | `query_logs`, `block_transaction`, `notify_soc` |
-| `bank_iam` | Keycloak | `freeze_account`, `revoke_session`, `query_sessions` |
-| `fraud_engine` | Fraud Engine | `block_transaction`, `notify_fraud_team`, `escalate_to_compliance`, `notify_soc` |
-
-**Verb union:** `query_logs`, `block_transaction`, `notify_soc`, `freeze_account`, `revoke_session`, `query_sessions`, `notify_fraud_team`, `escalate_to_compliance`
+Adapter sets under `c4_adapters/maritime/` and `c4_adapters/finance/` exist to satisfy the GA
+requirement for transferable wrappers across all four pilots. Their verb vocabularies are not
+documented here; real implementations are out of INNOV's M10–M15 scope.
 
 ---
 
