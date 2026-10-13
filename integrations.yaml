@@ -1,0 +1,113 @@
+# T5.3 Integration Endpoint Registry
+# Declares every external party T5.3 connects to: WP5 task APIs and pilot tool endpoints.
+# base_url values are empty by default — fill in when a partner shares their URL.
+# Runtime overrides are persisted to data/integrations_overrides.yaml and survive restarts.
+# Env var overrides: set INTEGRATION_<ID_UPPER>_URL (e.g. INTEGRATION_T54_ORCHESTRATOR_URL).
+
+self:
+  id: t53_gate
+  label: "T5.3 VIGILANCE Gate"
+  org: "INNOV-ACTS"
+  category: self
+  base_url: ""  # resolved at runtime from API_HOST / API_PORT env vars
+  health_path: "/api/v1/health"
+  description: "This service — T5.3 Agentic Wrapper Framework (WP5 / Horizon Europe GAP-101249737)"
+
+wp5_tasks:
+  - id: t54_orchestrator
+    label: "T5.4 Agentic Orchestrator"
+    org: "GFT"
+    category: wp5_task
+    base_url: ""
+    endpoints:
+      canonical_events: "/api/canonical-events"
+      action_requests: "/api/action-requests"
+    description: >
+      Receives CanonicalEvents from T5.3 (t53.canonical_events);
+      dispatches ActionRequests back (t53.action_requests).
+
+  - id: t51_knowledge
+    label: "T5.1 Knowledge Engine"
+    org: "AEGIS"
+    category: wp5_task
+    base_url: ""
+    endpoints:
+      rag_query: "/api/rag/query"
+    description: >
+      RAG knowledge context — consumed by T5.4 before generating ActionRequests.
+      T5.3 does not call T5.1 directly; documented here for topology visibility.
+
+  - id: t52_agent
+    label: "T5.2 Agent Training"
+    org: "GFT"
+    category: wp5_task
+    base_url: ""
+    endpoints:
+      results_sink: "/api/results"
+    description: >
+      Receives ExecutionResults published on t53.results for agent
+      improvement and MLOps feedback loop.
+
+# Pilot tool endpoints — OTE (TELECOM, Greece)
+# INNOV validation scope: OTE (T6.3) and Siemens (T6.5) only.
+pilot_tools:
+  - id: ote_siem
+    label: "OTE SIEM"
+    tool: "Splunk"
+    plugin: ote_siem
+    pilot: TELECOM
+    org: "OTE"
+    category: pilot_tool
+    base_url: ""
+    description: "block_ip · query_logs · create_incident"
+
+  - id: ote_iam
+    label: "OTE IAM"
+    tool: "Active Directory"
+    plugin: ote_iam
+    pilot: TELECOM
+    org: "OTE"
+    category: pilot_tool
+    base_url: ""
+    description: "revoke_session · query_sessions"
+
+  - id: ote_ids
+    label: "OTE IDS"
+    tool: "CrowdStrike"
+    plugin: ote_ids
+    pilot: TELECOM
+    org: "OTE"
+    category: pilot_tool
+    base_url: ""
+    description: "notify_soc"
+
+  # Pilot tool endpoints — Siemens (INDUSTRY_4, Romania)
+  - id: scada_opcua
+    label: "Siemens SCADA OPC-UA"
+    tool: "OPC-UA Endpoint"
+    plugin: scada_opcua
+    pilot: INDUSTRY_4
+    org: "Siemens"
+    category: pilot_tool
+    base_url: ""
+    description: "isolate_plc · notify_soc · update_zt_policy"
+
+  - id: ot_iam
+    label: "Siemens OT IAM"
+    tool: "OT IAM"
+    plugin: ot_iam
+    pilot: INDUSTRY_4
+    org: "Siemens"
+    category: pilot_tool
+    base_url: ""
+    description: "revoke_ot_session · query_sessions"
+
+  - id: industrial_siem
+    label: "Siemens Industrial SIEM"
+    tool: "Splunk (industrial)"
+    plugin: industrial_siem
+    pilot: INDUSTRY_4
+    org: "Siemens"
+    category: pilot_tool
+    base_url: ""
+    description: "query_logs · block_ip · create_incident"

@@ -19,6 +19,8 @@ RUN pip install --no-cache-dir fastapi "uvicorn[standard]" pika "pydantic>=2.0" 
 COPY vigilance/ vigilance/
 COPY profiles/ profiles/
 COPY schemas/ schemas/
+COPY integrations.yaml .
+COPY vigilance_t53_demo.html .
 
 # Install package
 RUN pip install --no-cache-dir -e . --no-deps

@@ -23,6 +23,12 @@ Results:
 Audit:
   GET  /api/v1/audit                                   List AuditRecords
   GET  /api/v1/audit/{audit_id}                        Single AuditRecord
+
+Integrations:
+  GET   /api/v1/integrations                           List all declared partner endpoints
+  GET   /api/v1/integrations/{partner_id}              Single partner entry
+  PATCH /api/v1/integrations/{partner_id}              Update a partner's base_url (persisted)
+  POST  /api/v1/integrations/{partner_id}/check        Probe reachability of a partner endpoint
 """
 from __future__ import annotations
 
@@ -31,10 +37,13 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from vigilance.integrations import get_registry
 from vigilance.pipeline import T53Pipeline
 
 logger = logging.getLogger(__name__)
@@ -74,6 +83,21 @@ class ActionRequestPayload(BaseModel):
     actions: list[str]
     policy_update: str | None = None
     agent_confidence: float = 0.9
+
+
+class IntegrationUpdatePayload(BaseModel):
+    base_url: str
+
+
+_UI_PATH = Path(__file__).parent.parent.parent / "vigilance_t53_demo.html"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def serve_ui() -> HTMLResponse:
+    """Serve the T5.3 demo UI at the root path."""
+    if not _UI_PATH.exists():
+        return HTMLResponse("<h1>UI not found</h1><p>vigilance_t53_demo.html is missing from the app root.</p>", status_code=404)
+    return HTMLResponse(_UI_PATH.read_text())
 
 
 @app.get("/api/v1/health", tags=["System"])
@@ -396,3 +420,64 @@ def submit_action_request(body: ActionRequestPayload) -> JSONResponse:
         status_code=200 if result.overall_success else 207,
         content=response_content,
     )
+
+
+# ---------------------------------------------------------------------------
+# Integrations registry
+# ---------------------------------------------------------------------------
+
+@app.get("/api/v1/integrations", tags=["Integrations"])
+def list_integrations() -> JSONResponse:
+    """List all declared T5.3 partner endpoints (WP5 tasks + pilot tools).
+
+    Returns the full registry as loaded from integrations.yaml, with any
+    runtime URL overrides applied. Use PATCH /{partner_id} to set a URL.
+    """
+    registry = get_registry()
+    entries = registry.list_all()
+    return JSONResponse(
+        status_code=200,
+        content={"total": len(entries), "integrations": entries},
+    )
+
+
+@app.get("/api/v1/integrations/{partner_id}", tags=["Integrations"])
+def get_integration(partner_id: str) -> JSONResponse:
+    """Retrieve a single integration entry by its partner_id."""
+    registry = get_registry()
+    entry = registry.get(partner_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Integration '{partner_id}' not found.")
+    return JSONResponse(status_code=200, content=entry)
+
+
+@app.patch("/api/v1/integrations/{partner_id}", tags=["Integrations"])
+def update_integration(partner_id: str, body: IntegrationUpdatePayload) -> JSONResponse:
+    """Update the base_url for a partner.
+
+    The new URL is persisted to data/integrations_overrides.yaml and
+    survives container restarts. T5.3 starts using the new URL immediately.
+    """
+    registry = get_registry()
+    try:
+        entry = registry.update_url(partner_id, body.base_url)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return JSONResponse(
+        status_code=200,
+        content={"message": f"Endpoint for '{partner_id}' updated.", **entry},
+    )
+
+
+@app.post("/api/v1/integrations/{partner_id}/check", tags=["Integrations"])
+def check_integration_reachability(partner_id: str) -> JSONResponse:
+    """Probe the declared base_url for a partner with a short HTTP GET.
+
+    Returns reachability status and HTTP response code (when reachable).
+    """
+    registry = get_registry()
+    try:
+        result = registry.check_reachability(partner_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return JSONResponse(status_code=200, content=result)
