@@ -202,6 +202,10 @@
   </div>
   <button class="step-btn" onclick="goTo(8)" id="sb8"><span class="sn" style="font-size:12px;">🔍</span> API Explorer</button>
   <button class="step-btn" onclick="goTo(9)" id="sb9"><span class="sn" style="font-size:12px;">📋</span> OPA / Rego</button>
+  <div style="padding:8px 18px 4px;margin-top:6px;border-top:1px solid #21262d;">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#bc8cff;opacity:.8;">Partner Config</div>
+  </div>
+  <button class="step-btn" onclick="goTo(10)" id="sb10"><span class="sn" style="background:#1a0d2e;color:#bc8cff;font-size:12px;">⛓</span> Integrations</button>
 </aside>
 
 <main class="main">
@@ -1278,9 +1282,48 @@
   </div>
 </div>
 
+<div class="step-panel" id="panel10">
+  <div class="step-title">Integration Registry</div>
+  <div class="step-subtitle">Declare and manage every external API endpoint T5.3 connects to — WP5 task partners and pilot tool APIs. URLs are persisted to <code>data/integrations_overrides.yaml</code> and survive restarts.</div>
+
+  <div style="display:flex;gap:10px;margin-bottom:24px;align-items:center;flex-wrap:wrap;">
+    <button onclick="loadIntegrations()" style="padding:7px 16px;background:#1f6feb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">↻ Refresh</button>
+    <button onclick="checkAllIntegrations()" style="padding:7px 16px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;cursor:pointer;font-size:13px;">Ping All</button>
+    <span id="int-last-check" style="font-size:11px;color:#6e7681;margin-left:6px;"></span>
+  </div>
+
+  <!-- T5.3 Self -->
+  <div style="margin-bottom:28px;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#58a6ff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #21262d;">T5.3 GATE — This Service</div>
+    <div id="int-section-self"><div style="font-size:12px;color:#6e7681;">Loading…</div></div>
+  </div>
+
+  <!-- WP5 Tasks -->
+  <div style="margin-bottom:28px;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#bc8cff;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #21262d;">WP5 Task Connections</div>
+    <div id="int-section-wp5"><div style="font-size:12px;color:#6e7681;">Loading…</div></div>
+  </div>
+
+  <!-- Pilot Tools -->
+  <div style="margin-bottom:28px;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#ffa657;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #21262d;">Pilot Tool Endpoints</div>
+    <div style="font-size:10px;color:#6e7681;margin-bottom:8px;font-weight:600;">OTE — Telecom · Greece</div>
+    <div id="int-section-telecom"><div style="font-size:12px;color:#6e7681;">Loading…</div></div>
+    <div style="font-size:10px;color:#6e7681;margin-top:18px;margin-bottom:8px;font-weight:600;">Siemens — Industry 4.0 · Romania</div>
+    <div id="int-section-industry4"><div style="font-size:12px;color:#6e7681;">Loading…</div></div>
+  </div>
+
+  <div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:12px 16px;font-size:11px;color:#6e7681;line-height:1.7;">
+    <strong style="color:#8b949e;">How to declare an endpoint:</strong>
+    Enter the base URL (e.g. <code>http://t54-host:9000</code>) and click <em>Save</em>. T5.3 starts using it immediately.
+    <em>Ping</em> sends a probe GET to verify reachability. Overrides survive restarts (<code>data/integrations_overrides.yaml</code>).
+    Env var pattern: <code>INTEGRATION_&lt;ID_UPPER&gt;_URL</code> (highest precedence, read at startup only).
+  </div>
+</div>
+
 <div class="nav-footer">
   <button class="nav-btn secondary" id="btnPrev" onclick="navigate(-1)" disabled>← Previous</button>
-  <span class="progress-text" id="progressText">Step 1 of 9</span>
+  <span class="progress-text" id="progressText">Step 1 of 11</span>
   <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">Next →</button>
 </div>
 </main>
@@ -1288,7 +1331,7 @@
 
 <script>
   const BASE_URL = 'http://localhost:8000';
-  const TOTAL = 10;
+  const TOTAL = 11;
   let cur = 0;
   let capturedEventId      = null;
   let capturedEventIdLLM   = null;
@@ -1472,6 +1515,7 @@
     const w = document.getElementById('guardrail-prereq');
     if (w) w.style.display = (cur===3 && !capturedRequestId) ? 'block' : 'none';
     if (cur === 2) renderT54Simulation();
+    if (cur === 10) loadIntegrations();
   }
 
   function navigate(dir){ goTo(Math.max(0, Math.min(TOTAL-1, cur+dir))); }
@@ -1949,6 +1993,131 @@
     } catch(e) { showResp('rego-result', {error:e.message}, 'Error', Date.now()-t0); }
     setSpinner('rego-result', false);
   }
+
+  // ── Integrations panel ───────────────────────────────────────────────────────
+
+  let intData = {};
+
+  function renderIntEntry(entry) {
+    const id = entry.id;
+    const url = entry.base_url || '';
+    const orgHtml = entry.org
+      ? `<span style="font-size:10px;background:#21262d;color:#8b949e;padding:1px 6px;border-radius:3px;margin-left:5px;">${entry.org}</span>`
+      : '';
+    const toolHtml = entry.tool
+      ? `<span style="font-size:10px;color:#6e7681;"> · ${entry.tool}</span>`
+      : '';
+    const isSelf = entry.category === 'self';
+    const accentBorder = isSelf ? '#1f6feb' : entry.category === 'wp5_task' ? '#6e40c9' : '#d4852a';
+    return `
+      <div style="display:grid;grid-template-columns:210px 1fr 70px 60px 100px;gap:8px;align-items:center;
+                  padding:10px 14px;background:#0d1117;border:1px solid #21262d;border-left:3px solid ${accentBorder};
+                  border-radius:7px;margin-bottom:7px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:#c9d1d9;display:flex;align-items:center;flex-wrap:wrap;gap:2px;">
+            ${entry.label}${orgHtml}
+          </div>
+          <div style="font-size:11px;color:#6e7681;margin-top:2px;">${entry.description || ''}${toolHtml}</div>
+        </div>
+        <input type="text" id="int-url-${id}" value="${url}" placeholder="https://..."
+          style="background:#161b22;border:1px solid #30363d;color:#c9d1d9;padding:6px 10px;
+                 border-radius:5px;font-size:12px;width:100%;font-family:'JetBrains Mono',monospace;box-sizing:border-box;"
+          onkeydown="if(event.key==='Enter') saveIntegrationUrl('${id}')">
+        <button onclick="saveIntegrationUrl('${id}')"
+          style="padding:5px 10px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;
+                 border-radius:5px;cursor:pointer;font-size:12px;">Save</button>
+        <button onclick="checkIntegration('${id}')"
+          style="padding:5px 10px;background:#0d2240;color:#58a6ff;border:1px solid #1f6feb;
+                 border-radius:5px;cursor:pointer;font-size:12px;">Ping</button>
+        <span id="int-status-${id}"
+          style="display:inline-block;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;
+                 background:#21262d;color:#6e7681;text-align:center;white-space:nowrap;">
+          ${url ? '—' : 'Not set'}
+        </span>
+      </div>`;
+  }
+
+  async function loadIntegrations() {
+    const sections = ['int-section-self','int-section-wp5','int-section-telecom','int-section-industry4'];
+    sections.forEach(s => { const el = document.getElementById(s); if(el) el.innerHTML = '<div style="font-size:12px;color:#6e7681;">Loading…</div>'; });
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/integrations');
+      const d = await r.json();
+      intData = {};
+      d.integrations.forEach(e => { intData[e.id] = e; });
+
+      const self     = d.integrations.filter(e => e.category === 'self');
+      const wp5      = d.integrations.filter(e => e.category === 'wp5_task');
+      const telecom  = d.integrations.filter(e => e.category === 'pilot_tool' && e.pilot === 'TELECOM');
+      const ind4     = d.integrations.filter(e => e.category === 'pilot_tool' && e.pilot === 'INDUSTRY_4');
+
+      document.getElementById('int-section-self').innerHTML      = self.map(renderIntEntry).join('') || '<div style="color:#6e7681;font-size:12px;">None</div>';
+      document.getElementById('int-section-wp5').innerHTML       = wp5.map(renderIntEntry).join('')  || '<div style="color:#6e7681;font-size:12px;">None</div>';
+      document.getElementById('int-section-telecom').innerHTML   = telecom.map(renderIntEntry).join('') || '<div style="color:#6e7681;font-size:12px;">None</div>';
+      document.getElementById('int-section-industry4').innerHTML = ind4.map(renderIntEntry).join('') || '<div style="color:#6e7681;font-size:12px;">None</div>';
+
+      const el = document.getElementById('int-last-check');
+      if (el) el.textContent = d.total + ' entries loaded';
+    } catch(e) {
+      document.getElementById('int-section-self').innerHTML = `<div style="color:#f85149;font-size:12px;">Could not reach T5.3 API (${e.message}). Is vigilance-gate running?</div>`;
+    }
+  }
+
+  async function saveIntegrationUrl(id) {
+    const input = document.getElementById('int-url-' + id);
+    const statusEl = document.getElementById('int-status-' + id);
+    const url = input ? input.value.trim() : '';
+    if (statusEl) { statusEl.textContent = 'Saving…'; statusEl.style.color = '#6e7681'; statusEl.style.background = '#21262d'; }
+    try {
+      const r = await fetch(BASE_URL + `/api/v1/integrations/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base_url: url }),
+      });
+      if (r.ok) {
+        if (statusEl) { statusEl.textContent = '✓ Saved'; statusEl.style.color = '#3fb950'; statusEl.style.background = '#0d2a1a'; }
+        setTimeout(() => {
+          if (statusEl) { statusEl.textContent = url ? '—' : 'Not set'; statusEl.style.color = '#6e7681'; statusEl.style.background = '#21262d'; }
+        }, 1800);
+        if (intData[id]) intData[id].base_url = url;
+      } else {
+        if (statusEl) { statusEl.textContent = '✗ Error'; statusEl.style.color = '#f85149'; statusEl.style.background = '#2d1117'; }
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = '✗ Error'; statusEl.style.color = '#f85149'; statusEl.style.background = '#2d1117'; }
+    }
+  }
+
+  async function checkIntegration(id) {
+    const statusEl = document.getElementById('int-status-' + id);
+    if (statusEl) { statusEl.textContent = 'Pinging…'; statusEl.style.color = '#6e7681'; statusEl.style.background = '#21262d'; }
+    try {
+      const r = await fetch(BASE_URL + `/api/v1/integrations/${encodeURIComponent(id)}/check`, { method: 'POST' });
+      const d = await r.json();
+      if (statusEl) {
+        if (d.status === 'not_configured') {
+          statusEl.textContent = 'Not set'; statusEl.style.color = '#6e7681'; statusEl.style.background = '#21262d';
+        } else if (d.reachable) {
+          statusEl.textContent = '✓ ' + (d.http_status || 'OK'); statusEl.style.color = '#3fb950'; statusEl.style.background = '#0d2a1a';
+        } else {
+          const lbl = d.status === 'connection_refused' ? 'Refused' : d.status === 'timeout' ? 'Timeout' : d.status;
+          statusEl.textContent = '✗ ' + lbl; statusEl.style.color = '#f85149'; statusEl.style.background = '#2d1117';
+        }
+      }
+    } catch(e) {
+      if (statusEl) { statusEl.textContent = '✗ Error'; statusEl.style.color = '#f85149'; }
+    }
+  }
+
+  async function checkAllIntegrations() {
+    if (!Object.keys(intData).length) await loadIntegrations();
+    const el = document.getElementById('int-last-check');
+    if (el) el.textContent = 'Pinging all…';
+    await Promise.all(Object.keys(intData).map(id => checkIntegration(id)));
+    if (el) el.textContent = 'Ping complete — ' + new Date().toLocaleTimeString();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   mountEidRows();
   goTo(0);
