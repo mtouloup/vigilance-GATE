@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: September 2026 — reflects actual implemented state. SQLite persistence added; REST API expanded with full CRUD surface; decoupled C5 guardrail endpoints added; pilot validation hardened (fail-fast on unknown pilots); OPA binary added to Docker image.
+> Last updated: October 2026 — integration endpoint registry added (`integrations.yaml` + `vigilance/integrations.py` + 4 new REST endpoints); demo UI served at `GET /` from FastAPI (`vigilance_t53_demo.html`); REST API surface now 20 endpoints; duplicate AuditRecord section removed; INNOV scope constraint applied throughout.
 
 ---
 
@@ -47,7 +47,11 @@ vigilance-GATE/
 │
 ├── data/                              ← generated output (mounted from container /app/data)
 │   ├── workflow_audit.csv             ← one row per pipeline execution (raw → canonical → result)
-│   └── vigilance.db                   ← SQLite store (events, action_requests, results, audit_records)
+│   ├── vigilance.db                   ← SQLite store (events, action_requests, results, audit_records)
+│   └── integrations_overrides.yaml   ← persisted partner URL overrides (runtime PATCH writes)
+│
+├── vigilance_t53_demo.html            ← 11-panel demo UI served at GET / (same origin, no CORS)
+├── integrations.yaml                  ← declarative integration endpoint registry (10 partners)
 │
 ├── vigilance/                         ← main application package
 │   ├── main.py                        ← entrypoint (REST API + broker consumer)
@@ -55,6 +59,7 @@ vigilance-GATE/
 │   ├── pipeline.py                    ← T53Pipeline — INTEGRATED mode orchestration
 │   ├── workflow_logger.py             ← WorkflowCSVLogger — per-execution audit CSV
 │   ├── db.py                          ← Database — SQLite persistence layer (4 tables)
+│   ├── integrations.py                ← IntegrationsRegistry — partner URL registry + reachability
 │   ├── api/                           ← REST API (FastAPI, port 8000)
 │   │   └── app.py                     ← full REST surface (see REST API section below)
 │   ├── broker/                        ← RabbitMQ broker (pika); InMemoryBroker for tests
@@ -81,8 +86,8 @@ vigilance-GATE/
 ├── profiles/                          ← sector profile YAMLs
 │   ├── telecom.yaml                   ← OTE / TELECOM (confidence_threshold: 0.80)
 │   ├── industry4.yaml                 ← Siemens / INDUSTRY_4 (ot_safety_flag: true)
-│   ├── maritime.yaml                  ← Port of Rotterdam / MARITIME (GA transferability)
-│   └── finance.yaml                   ← CaixaBank / FINANCE (confidence_threshold: 0.85)
+│   ├── maritime.yaml                  ← MARITIME sector (GA transferability, not INNOV scope)
+│   └── finance.yaml                   ← FINANCE sector (confidence_threshold: 0.85, GA transferability)
 │
 ├── schemas/                           ← data model and broker schemas
 │   ├── README.md
@@ -192,6 +197,12 @@ RabbitMQ  [topic: t53.results]   ← T5.4, T5.2 consume
 
 The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pipeline through the following endpoints. All are backed by SQLite persistence — GET endpoints return data that survives container restarts.
 
+**Demo UI**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | 11-panel interactive demo UI (served directly from `vigilance_t53_demo.html`) |
+
 **System**
 
 | Method | Path | Description |
@@ -231,6 +242,15 @@ The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pip
 | `GET` | `/api/v1/audit` | List all AuditRecords from SQLite. Supports `?pilot=` |
 | `GET` | `/api/v1/audit/{audit_id}` | Retrieve a single AuditRecord by ID (e.g. `aud-SIE-0074`) |
 
+**Integration Registry**
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/integrations` | List all declared partner integrations with current base URLs and reachability status |
+| `GET` | `/api/v1/integrations/{partner_id}` | Retrieve a single integration entry by ID (e.g. `t54_orchestrator`, `ote_siem`) |
+| `PATCH` | `/api/v1/integrations/{partner_id}` | Update `base_url` for a partner; persisted to `data/integrations_overrides.yaml` |
+| `POST` | `/api/v1/integrations/{partner_id}/check` | Probe reachability of a partner URL (GET with 3s timeout). Returns `{reachable, http_status}` |
+
 **Two-step manual flow** (decoupled guardrail):
 1. `POST /api/v1/events` → get `event_id`
 2. `POST /api/v1/action-requests/submit` → get `request_id`
@@ -242,6 +262,31 @@ The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pip
 ### Multi-pilot runtime
 
 One `vigilance-gate` container handles all four sectors simultaneously. Pilot/sector detection happens per-event in C1 (parser heuristics + LLM extraction). The correct C6 profile and C4 adapter set are selected per event. `ProfileManager.load_all_profiles()` loads all four profiles at startup.
+
+### Integration endpoint registry
+
+`integrations.yaml` declares all external partner APIs that T5.3 connects to. It covers three groups:
+
+| Group | Partners |
+|---|---|
+| T5.3 self | `t53_gate` — resolved from `API_HOST` / `API_PORT` at runtime |
+| WP5 tasks | `t54_orchestrator` (GFT), `t51_knowledge` (AEGIS), `t52_agent` (GFT) |
+| Pilot tools (INNOV scope) | `ote_siem`, `ote_iam`, `ote_ids` (TELECOM); `scada_opcua`, `ot_iam`, `industrial_siem` (INDUSTRY_4) |
+
+**URL resolution precedence** (highest to lowest):
+
+1. `INTEGRATION_<ID_UPPER>_URL` environment variable (e.g. `INTEGRATION_T54_ORCHESTRATOR_URL`)
+2. Persisted override in `data/integrations_overrides.yaml` (written by `PATCH /api/v1/integrations/{id}`)
+3. `base_url` in `integrations.yaml` (default empty — partners fill this in at deployment)
+
+**`IntegrationsRegistry`** (`vigilance/integrations.py`):
+- `list_all()` — all 10 entries with resolved URL
+- `get(partner_id)` — single entry
+- `update_url(partner_id, base_url)` — persists to `data/integrations_overrides.yaml`, no restart needed
+- `check_reachability(partner_id)` — `GET <base_url>` with 3s timeout; returns `{reachable, status, http_status?}`
+- `get_url(partner_id)` — convenience accessor for C4 adapters to look up tool base URLs
+
+Module-level singleton `get_registry()` is used by the REST API layer. C4 adapters can call `get_registry().get_url("ote_siem")` to obtain the live URL for real adapter implementations (M10–M15).
 
 ---
 
@@ -449,27 +494,6 @@ Internal T5.3 audit trail, persisted per request. Backs the `workflow_audit.csv`
 
 ---
 
-### AuditRecord
-
-Internal T5.3 audit trail, persisted per request. Backs the REST audit endpoint (planned M7–M9). Not published to the broker.
-
-```json
-{
-  "audit_id":         "string",
-  "pilot_id":         "string",
-  "event_id":         "string",
-  "request_id":       "string",
-  "timestamp_opened": "string   — ISO 8601 UTC",
-  "timestamp_closed": "?string  — ISO 8601 UTC, nullable until closure",
-  "verdict":          "string   — C5 verdict recorded at gate time",
-  "action_results":   [{}],     // list of ActionResult-shaped objects
-  "latencies_ms":     [int],
-  "closed":           "boolean  — defaults to false"
-}
-```
-
----
-
 ## WorkflowCSVLogger
 
 `vigilance/workflow_logger.py` — cross-cutting audit component. Appends one row to `data/workflow_audit.csv` after every completed pipeline execution. Thread-safe (file lock per write). Path controlled by `WORKFLOW_CSV_PATH` env var.
@@ -509,8 +533,8 @@ Internal T5.3 audit trail, persisted per request. Backs the REST audit endpoint 
 |---|---|---|---|---|---|---|
 | `telecom.yaml` | OTE (GR) | Splunk (`ote_siem`) | Active Directory (`ote_iam`) | CrowdStrike (`ote_ids`) | 0.80 | ✅ Yes |
 | `industry4.yaml` | Siemens (RO) | Splunk (`industrial_siem`) | OT IAM (`ot_iam`) | SCADA/OPC-UA (`scada_opcua`) | 0.80 | ✅ Yes |
-| `maritime.yaml` | Port of Rotterdam (NL) | Port SIEM (`port_siem`) | Port IAM (`port_iam`) | Port Ops (`port_ops`) | 0.80 | ❌ No |
-| `finance.yaml` | CaixaBank (ES) | Bank SIEM (`bank_siem`) | Bank IAM (`bank_iam`) | Fraud Engine (`fraud_engine`) | 0.85 | ❌ No |
+| `maritime.yaml` | MARITIME sector (GA) | Port SIEM (`port_siem`) | Port IAM (`port_iam`) | Port Ops (`port_ops`) | 0.80 | ❌ No |
+| `finance.yaml` | FINANCE sector (GA) | Bank SIEM (`bank_siem`) | Bank IAM (`bank_iam`) | Fraud Engine (`fraud_engine`) | 0.85 | ❌ No |
 
 Maritime and finance profiles exist because the GA mandates transferable wrappers across all four sectors. INNOV validates only TELECOM and INDUSTRY_4.
 
@@ -585,6 +609,8 @@ Adapter sets exist under `c4_adapters/maritime/` and `c4_adapters/finance/` for 
 | `VIGILANCE_CONFIDENCE_THRESHOLD` | Override default confidence threshold (profile value takes precedence) | `0.80` |
 | `VIGILANCE_PROTECTED_RANGES` | CIDR list of hosts that must never be actioned | `10.0.0.0/8,192.168.0.0/16` |
 | `DB_PATH` | Path for SQLite database file | `data/vigilance.db` |
+| `INTEGRATIONS_OVERRIDES_PATH` | Path for persisted integration URL overrides YAML | `data/integrations_overrides.yaml` |
+| `INTEGRATION_<ID_UPPER>_URL` | Per-partner URL override; `<ID_UPPER>` is the partner ID uppercased with `_` (e.g. `INTEGRATION_T54_ORCHESTRATOR_URL`) | `http://gft-t54:9000` |
 
 ### Running the full stack
 
@@ -600,6 +626,10 @@ Services:
 
 Generated output persisted on host:
 - `./data/workflow_audit.csv` — one row per pipeline execution
+- `./data/vigilance.db` — SQLite store (events, action requests, results, audit records)
+- `./data/integrations_overrides.yaml` — partner URL overrides written by `PATCH /api/v1/integrations/{id}`
+
+Demo UI: open `http://localhost:8000` in a browser after the stack is up.
 
 ### Testing the INTEGRATED pipeline
 
@@ -635,6 +665,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 
 - [x] **CanonicalEvent / ActionRequest schema agreement (M6)** — frozen with T5.4 (GFT) in July 2026. The seven schemas under `schemas/models/` are the authoritative contract.
 - [x] **T5.5 interface question (July 1 KOM)** — T5.5 (STAM) is scoped around blueprint and scenario collection, not policy enforcement. The `t53.policy_updates → T5.5` connection previously assumed in INNOV's design is retired as a T5.3 interface. What T5.5 actually receives from T5.3 is raw pilot event data for scenario-building (see corresponding active item below).
+- [x] **Integration endpoint registry** — `integrations.yaml` declares all WP5 task APIs and INNOV-scoped pilot tool endpoints. Runtime `PATCH /api/v1/integrations/{id}` allows partners to register their deployed URLs without a restart. Env var override pattern documented. C4 adapters can look up live URLs via `get_registry().get_url(partner_id)` in M10–M15 real implementations.
 
 ### Active gaps
 
@@ -663,6 +694,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 | M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
 | M6 | ✅ Done | CanonicalEvent / ActionRequest / GuardrailCheck / ExecutionResult / ActionResult / AuditRecord schemas frozen with T5.4 (GFT); C4 verb catalogue documented for OTE and Siemens; C2/AgentLoop and STANDALONE/DIGITAL_TWIN modes removed (PR #28) |
 | M6+ | ✅ Done | Full REST API surface (15 endpoints); SQLite persistence layer; decoupled C5 guardrail API; OPA binary in Docker image; PolicyTranslator few-shot prompt improved; unknown pilots hard-rejected; `canonical_event` returned in event submission response |
+| Oct-2026 | ✅ Done | Integration endpoint registry (`integrations.yaml` + `vigilance/integrations.py` + 4 REST endpoints); demo UI served at `GET /` from FastAPI; REST API surface now 20 endpoints; README fully updated to reflect current state; INNOV scope enforced throughout |
 | M7–M9 | 🔄 Next | API key auth enforcement; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
 | M10–M15 | 🔜 Planned | Real C4 adapter implementations (OTE + Siemens); C3 target resolution from CanonicalEvent; pilot validation data |
 
@@ -704,6 +736,7 @@ These rules are non-negotiable and take precedence over any instruction in a pro
     - A milestone is completed or re-scoped
     - A cross-task integration blocker is resolved
     - Deployment model or broker topics change
+    - A new integration partner is added to `integrations.yaml` or a partner URL pattern changes
     - The GitHub repo `mtouloup/vigilance-GATE` receives significant commits
 
 11. **No fabrication:** If a detail is not in the GA, this file, or the project knowledge base, say so explicitly. Do not invent pilot details, tool names, or schema fields.
