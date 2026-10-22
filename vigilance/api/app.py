@@ -66,8 +66,9 @@ _pipeline: T53Pipeline | None = None
 def get_pipeline() -> T53Pipeline:
     global _pipeline
     if _pipeline is None:
-        dry_run = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
-        _pipeline = T53Pipeline(dry_run=dry_run)
+        dry_run        = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
+        wp3_simulation = os.getenv("VIGILANCE_WP3_SIMULATION", "").lower() in ("1", "true", "yes")
+        _pipeline = T53Pipeline(dry_run=dry_run, wp3_simulation=wp3_simulation)
     return _pipeline
 
 

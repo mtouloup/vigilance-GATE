@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: October 2026 — integration endpoint registry added (`integrations.yaml` + `vigilance/integrations.py` + 4 new REST endpoints); demo UI served at `GET /` from FastAPI (`vigilance_t53_demo.html`); REST API surface now 20 endpoints; duplicate AuditRecord section removed; INNOV scope constraint applied throughout.
+> Last updated: October 2026 — integration endpoint registry added (`integrations.yaml` + `vigilance/integrations.py` + 4 new REST endpoints); demo UI served at `GET /` from FastAPI (`vigilance_t53_demo.html`); REST API surface now 20 endpoints; duplicate AuditRecord section removed; INNOV scope constraint applied throughout. WP3 simulation mode added (`VIGILANCE_WP3_SIMULATION` flag, `TOPIC_WP3_RESULTS = "t53.wp3_results"`, `wp3_simulation` param on `T53Pipeline`); `dt.events.synthetic` stale queue removed; demo UI expanded to 14 panels (Guardrail Checks, WP3 Simulation, Broker Topics).
 
 ---
 
@@ -50,7 +50,7 @@ vigilance-GATE/
 │   ├── vigilance.db                   ← SQLite store (events, action_requests, results, audit_records)
 │   └── integrations_overrides.yaml   ← persisted partner URL overrides (runtime PATCH writes)
 │
-├── vigilance_t53_demo.html            ← 11-panel demo UI served at GET / (same origin, no CORS)
+├── vigilance_t53_demo.html            ← 14-panel demo UI served at GET / (same origin, no CORS)
 ├── integrations.yaml                  ← declarative integration endpoint registry (10 partners)
 │
 ├── vigilance/                         ← main application package
@@ -201,7 +201,7 @@ The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pip
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | 11-panel interactive demo UI (served directly from `vigilance_t53_demo.html`) |
+| `GET` | `/` | 14-panel interactive demo UI (served directly from `vigilance_t53_demo.html`) |
 
 **System**
 
@@ -299,6 +299,7 @@ Module-level singleton `get_registry()` is used by the REST API layer. C4 adapte
 | `t53.action_requests` | Inbound | T5.4 | C5 → C3 → C4 |
 | `t53.policy_updates` | Outbound | C3 | downstream consumer TBD (see Open Items) |
 | `t53.actions.dispatch` | Outbound | C4 | Pilot tools (fire-and-forget) |
+| `t53.wp3_results` | Outbound | C4 (wp3_simulation=True) | WP3/WP7 (STAM/D-VISOR) — pending consumer agreement |
 | `t53.results` | Outbound | C5 | T5.4, T5.2 |
 
 All queues are durable and pre-declared via `infra/rabbitmq/definitions.json` at broker startup.
@@ -602,7 +603,8 @@ Adapter sets exist under `c4_adapters/maritime/` and `c4_adapters/finance/` for 
 | `AMQP_URL` | RabbitMQ AMQP connection string | `amqp://vigilance:vigilance@rabbitmq:5672/` |
 | `OLLAMA_BASE_URL` | Ollama server URL; if unset, StubLLMProvider is used | `http://ollama:11434` |
 | `OLLAMA_MODELS_DIR` | Override to bind-mount host model cache | `~/.ollama` |
-| `VIGILANCE_DRY_RUN` | Dry-run mode — guardrail runs, broker dispatch skipped | `true` / `false` |
+| `VIGILANCE_DRY_RUN` | Dry-run mode — guardrail runs, broker dispatch skipped entirely | `true` / `false` |
+| `VIGILANCE_WP3_SIMULATION` | WP3 simulation — full pipeline runs but dispatch publishes to `t53.wp3_results` instead of `t53.actions.dispatch`. Separate from `dry_run`. | `true` / `false` |
 | `WORKFLOW_CSV_PATH` | Path for workflow audit CSV output | `/app/data/workflow_audit.csv` |
 | `API_HOST` | REST API bind address | `0.0.0.0` |
 | `API_PORT` | REST API port | `8000` |
@@ -676,7 +678,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 - [x] **Audit REST endpoint** — implemented (`GET /api/v1/audit`, `GET /api/v1/audit/{audit_id}`). Backed by SQLite; survives restarts.
 - [ ] **Real C4 adapters** — all adapters currently return canned stub responses. Real implementations against pilot tool APIs are M10–M15, scoped to OTE and Siemens only.
 - [ ] **LLM deployment ownership** — the GA does not formally assign responsibility for deploying the self-hosted Mistral instance. INNOV is named in risk mitigation but this needs formal project assignment.
-- [ ] **Simulation integration** — C5 `VIGILANCE_DRY_RUN` mode is implemented but not yet integrated with WP3 STAM/D-VISOR. Broker topic names and synthetic event format must be agreed with STAM.
+- [ ] **WP3 simulation integration** — `VIGILANCE_WP3_SIMULATION=true` mode implemented (dispatches to `t53.wp3_results` instead of `t53.actions.dispatch`). Broker topic name `t53.wp3_results` and the WP3/WP7 consumer endpoint must still be agreed with STAM. Queue pre-declared in `infra/rabbitmq/definitions.json`.
 - [ ] **SME accessibility** — the GA requires "SME-accessible deployment". A concrete operational guide for non-expert deployment is missing.
 - [ ] **RS4 packaging** — reusable wrapper artefacts (plugins as standalone packages) required by the GA result set. Planned for M18 prototype. No packaging design exists yet.
 - [ ] **D5.1 contribution plan** — INNOV's specific contribution sections to D5.1 are not yet formally assigned within the consortium.
@@ -694,7 +696,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 | M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
 | M6 | ✅ Done | CanonicalEvent / ActionRequest / GuardrailCheck / ExecutionResult / ActionResult / AuditRecord schemas frozen with T5.4 (GFT); C4 verb catalogue documented for OTE and Siemens; C2/AgentLoop and STANDALONE/DIGITAL_TWIN modes removed (PR #28) |
 | M6+ | ✅ Done | Full REST API surface (15 endpoints); SQLite persistence layer; decoupled C5 guardrail API; OPA binary in Docker image; PolicyTranslator few-shot prompt improved; unknown pilots hard-rejected; `canonical_event` returned in event submission response |
-| Oct-2026 | ✅ Done | Integration endpoint registry (`integrations.yaml` + `vigilance/integrations.py` + 4 REST endpoints); demo UI served at `GET /` from FastAPI; REST API surface now 20 endpoints; README fully updated to reflect current state; INNOV scope enforced throughout |
+| Oct-2026 | ✅ Done | Integration endpoint registry (`integrations.yaml` + `vigilance/integrations.py` + 4 REST endpoints); demo UI served at `GET /` from FastAPI; REST API surface now 20 endpoints; README fully updated to reflect current state; INNOV scope enforced throughout. WP3 simulation mode (`VIGILANCE_WP3_SIMULATION`); `t53.wp3_results` queue added; `dt.events.synthetic` stale queue removed; demo UI expanded to 14 panels |
 | M7–M9 | 🔄 Next | API key auth enforcement; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
 | M10–M15 | 🔜 Planned | Real C4 adapter implementations (OTE + Siemens); C3 target resolution from CanonicalEvent; pilot validation data |
 

@@ -206,6 +206,12 @@
     <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#bc8cff;opacity:.8;">Partner Config</div>
   </div>
   <button class="step-btn" onclick="goTo(10)" id="sb10"><span class="sn" style="background:#1a0d2e;color:#bc8cff;font-size:12px;">⛓</span> Integrations</button>
+  <div style="padding:8px 18px 4px;margin-top:6px;border-top:1px solid #21262d;">
+    <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#f85149;opacity:.8;">Pipeline Diagnostics</div>
+  </div>
+  <button class="step-btn" onclick="goTo(11)" id="sb11"><span class="sn" style="background:#2a0d0d;color:#f85149;font-size:12px;">🛡</span> Guardrail Checks</button>
+  <button class="step-btn" onclick="goTo(12)" id="sb12"><span class="sn" style="background:#0d1a2a;color:#79c0ff;font-size:12px;">🔁</span> WP3 Simulation</button>
+  <button class="step-btn" onclick="goTo(13)" id="sb13"><span class="sn" style="background:#1a1a0d;color:#e3b341;font-size:12px;">📡</span> Broker Topics</button>
 </aside>
 
 <main class="main">
@@ -1222,7 +1228,7 @@
     <div>
       <div class="step-label" style="color:#7ee787;">C3 — Policy Translation</div>
       <div class="step-title">OPA / Rego Output</div>
-      <div class="step-subtitle">Natural-language policy → Rego rule via Mistral Nemo 12B · Published to t53.policy_updates</div>
+      <div class="step-subtitle">Natural-language policy → Rego rule via mistral:7b (Ollama) · Published to t53.policy_updates</div>
     </div>
   </div>
 
@@ -1236,7 +1242,7 @@
       <div class="card-title"><span class="dot" style="background:#3fb950;"></span>What C3 PolicyTranslator does</div>
       <div class="tl">
         <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">1</div><div><div class="tl-title">Receives <code>policy_update</code> NL string</div><div class="tl-desc">Short directive sentence in <code>ActionRequest.policy_update</code>. Example: <em>"Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"</em>.</div></div></div>
-        <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">2</div><div><div class="tl-title">Mistral Nemo 12B — few-shot NL→Rego</div><div class="tl-desc">Sends to Ollama with pre-built few-shot examples. Produces a valid OPA/Rego rule package targeting the pilot's sector.</div></div></div>
+        <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">2</div><div><div class="tl-title">mistral:7b (Ollama) — few-shot NL→Rego</div><div class="tl-desc">Sends to Ollama with pre-built few-shot examples. Produces a valid OPA/Rego rule package targeting the pilot's sector.</div></div></div>
         <div class="tl-item"><div class="tl-dot" style="background:#1a3a22;">3</div><div><div class="tl-title">OPA parse validation + retry</div><div class="tl-desc">The OPA binary (in the Docker image) validates the generated Rego. One retry on failure. Double-failure falls back to <code>default deny = true</code> — fail-closed, never auto-approves.</div></div></div>
         <div class="tl-item"><div class="tl-dot" style="background:#238636;">4</div><div><div class="tl-title">Published to <code>t53.policy_updates</code></div><div class="tl-desc">Stored in SQLite + published on broker. Also returned in the REST API response as <code>policy_translation.rego_output</code>.</div></div></div>
       </div>
@@ -1321,9 +1327,411 @@
   </div>
 </div>
 
+<!-- ── PANEL 11: GUARDRAIL CHECKS ── -->
+<div class="step-panel" id="panel11">
+  <div class="step-header">
+    <div class="step-icon" style="background:#2a0d0d;font-size:20px;">🛡</div>
+    <div>
+      <div class="step-label" style="color:#f85149;">C5 — Safety Gate</div>
+      <div class="step-title">Guardrail Checks — All 5 Deterministic Rules</div>
+      <div class="step-subtitle">Python-based safety gate · NOT OPA/Rego · LLM semantic review only for ESCALATE cases</div>
+    </div>
+  </div>
+
+  <div style="background:#2a0d0d;border:1px solid #da3633;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#f85149;line-height:1.7;">
+    <strong>⚠ C5 is pure Python — not OPA/Rego.</strong><br>
+    The five guardrail rules below are implemented as deterministic <code>if</code>-statements in
+    <code>vigilance/components/c5_safety/guardrail.py</code>. Rego only appears in the C3
+    PolicyTranslator path (NL <code>policy_update</code> field → OPA/Rego). See the OPA / Rego
+    panel for that.
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+
+    <!-- Check ① -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="background:#1a2a1a;color:#3fb950;border:1px solid #238636;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">①</span>
+        <div style="font-size:13px;font-weight:700;color:#c9d1d9;">Agent confidence ≥ threshold</div>
+        <span class="tag tag-green" style="margin-left:auto;">All pilots</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+        <strong style="color:#c9d1d9;">What it checks:</strong> <code>ActionRequest.agent_confidence &lt; profile.confidence_threshold</code>.<br>
+        Default threshold: <strong>0.80</strong> for TELECOM and INDUSTRY_4.
+        Low-confidence requests trigger ESCALATE, not REJECTED — the LLM semantic check
+        decides whether to approve or reject borderline cases.
+      </div>
+      <pre style="font-size:11px;border-color:#238636;">if request.agent_confidence &lt; threshold:
+    reasons.append(f"agent_confidence {confidence:.2f} below threshold {threshold}")
+    verdict = ESCALATE  # → Mistral 7B semantic review</pre>
+    </div>
+
+    <!-- Check ② -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="background:#1a2a1a;color:#3fb950;border:1px solid #238636;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">②</span>
+        <div style="font-size:13px;font-weight:700;color:#c9d1d9;">src_ip not in protected CIDR ranges</div>
+        <span class="tag tag-green" style="margin-left:auto;">All pilots</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+        <strong style="color:#c9d1d9;">What it checks:</strong> If the event's <code>src_ip</code> falls within the
+        <code>VIGILANCE_PROTECTED_RANGES</code> CIDR list, the request is escalated.
+        Protected hosts must not be actioned without human review. Default protected ranges: <code>10.0.0.0/8</code>, <code>192.168.0.0/16</code>.
+      </div>
+      <pre style="font-size:11px;border-color:#238636;">if event.src_ip and _ip_in_protected(event.src_ip, protected_ranges):
+    reasons.append(f"src_ip {event.src_ip} is in protected range")
+    verdict = ESCALATE</pre>
+    </div>
+
+    <!-- Check ③ -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="background:#2a1a0d;color:#ffa657;border:1px solid #d1842a;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">③</span>
+        <div style="font-size:13px;font-weight:700;color:#c9d1d9;">Proportionality — len(actions) ≤ 5</div>
+        <span class="tag tag-green" style="margin-left:auto;">All pilots</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+        <strong style="color:#c9d1d9;">What it checks:</strong> An ActionRequest containing more than 5 action verbs is
+        <strong>hard-REJECTED</strong> — not escalated. This prevents a runaway agent from
+        dispatching an unbounded blast radius in a single request.
+      </div>
+      <pre style="font-size:11px;border-color:#da3633;">if len(request.actions) &gt; 5:
+    reasons.append(f"proportionality: {len(actions)} actions exceed limit of 5")
+    verdict = REJECTED  # Hard rejection — no LLM override</pre>
+    </div>
+
+    <!-- Check ④ -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="background:#2a1a00;color:#e3b341;border:1px solid #9e6a03;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">④</span>
+        <div style="font-size:13px;font-weight:700;color:#c9d1d9;">OT: <code>isolate_plc</code> requires <code>mode="safe-state"</code></div>
+        <span class="tag tag-orange" style="margin-left:auto;">INDUSTRY_4 only</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+        <strong style="color:#c9d1d9;">What it checks:</strong> If <code>isolate_plc</code> is in the actions list,
+        C5 verifies that <code>ot_safety_flag=true</code> on the canonical event. It adds an
+        informational reason to the record so that C3 knows to inject <code>mode="safe-state"</code>
+        when building adapter params. The SCADA plugin also hard-enforces this at execution time.
+      </div>
+      <pre style="font-size:11px;border-color:#9e6a03;">if "isolate_plc" in request.actions and event.ot_safety_flag:
+    reasons.append("OT safety: isolate_plc requires mode=safe-state (C3 will inject)")
+    guardrail_check.ot_safety_checked = True
+    # Not a rejection — informational; C3 injects safe-state param</pre>
+    </div>
+
+    <!-- Check ⑤ -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="background:#2a1a00;color:#e3b341;border:1px solid #9e6a03;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">⑤</span>
+        <div style="font-size:13px;font-weight:700;color:#c9d1d9;">OT: ZTA scope must be zone-limited</div>
+        <span class="tag tag-orange" style="margin-left:auto;">INDUSTRY_4 only</span>
+      </div>
+      <div style="font-size:12px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+        <strong style="color:#c9d1d9;">What it checks:</strong> If the <code>policy_update</code> string contains
+        <code>"full ot network"</code> or <code>"all zones"</code>, the request is escalated.
+        A blanket OT network policy change must go through human review — only zone-scoped
+        changes (e.g. <em>"Zone-B to Zone-A"</em>) are permitted without escalation.
+      </div>
+      <pre style="font-size:11px;border-color:#9e6a03;">if event.ot_safety_flag and request.policy_update:
+    scope = request.policy_update.lower()
+    if "full ot network" in scope or "all zones" in scope:
+        reasons.append("OT ZTA scope too broad: must be zone-limited")
+        verdict = ESCALATE  # → Mistral 7B semantic review</pre>
+    </div>
+
+  </div>
+
+  <!-- ESCALATE path -->
+  <div class="card">
+    <div class="card-title"><span class="dot" style="background:#f85149;"></span>ESCALATE path — Mistral 7B semantic review</div>
+    <div style="font-size:12.5px;color:#8b949e;line-height:1.7;margin-bottom:10px;">
+      When verdict is <code>ESCALATE</code> after checks ①②⑤ (not ③ — that is a hard REJECTED):
+      C5 calls Mistral 7B with the full ActionRequest context and asks: <em>"is this action proportionate
+      and safe for the given threat?"</em> The LLM resolves to either <code>APPROVED</code> or <code>REJECTED</code>.
+      When <code>OLLAMA_BASE_URL</code> is not set, <code>StubLLMProvider</code> is used and returns a canned
+      APPROVED response — ensuring tests work without a running Ollama instance.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:8px;padding:10px 14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:4px;">✅</div>
+        <div style="font-size:11px;font-weight:700;color:#3fb950;text-transform:uppercase;letter-spacing:.8px;">APPROVED</div>
+        <div style="font-size:11px;color:#6e7681;margin-top:4px;">Pipeline proceeds to C3/C4 dispatch</div>
+      </div>
+      <div style="background:#2a0d0d;border:1px solid #da3633;border-radius:8px;padding:10px 14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:4px;">❌</div>
+        <div style="font-size:11px;font-weight:700;color:#f85149;text-transform:uppercase;letter-spacing:.8px;">REJECTED</div>
+        <div style="font-size:11px;color:#6e7681;margin-top:4px;">ExecutionResult with response_code=403, no dispatch</div>
+      </div>
+      <div style="background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:10px 14px;text-align:center;">
+        <div style="font-size:22px;margin-bottom:4px;">🤖</div>
+        <div style="font-size:11px;font-weight:700;color:#e3b341;text-transform:uppercase;letter-spacing:.8px;">LLM REVIEW</div>
+        <div style="font-size:11px;color:#6e7681;margin-top:4px;">Only for ESCALATE — resolves to APPROVED or REJECTED</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="card-title"><span class="dot" style="background:#6e7681;"></span>GuardrailCheck schema — what C5 returns</div>
+    <pre style="font-size:11px;">{
+  <span class="key">"check_id"</span>:          <span class="str">"gc-a1b2c3d4-…"</span>,
+  <span class="key">"request_id"</span>:        <span class="str">"echoes ActionRequest.request_id"</span>,
+  <span class="key">"verdict"</span>:          <span class="str">"APPROVED | REJECTED | ESCALATE"</span>,
+  <span class="key">"reasons"</span>:          [<span class="str">"agent_confidence 0.79 below threshold 0.80"</span>],
+  <span class="key">"ot_safety_checked"</span>: <span class="ok">true</span>  <span class="cmt">// true when checks ④⑤ ran (INDUSTRY_4)</span>
+}</pre>
+    <div style="font-size:12px;color:#6e7681;margin-top:8px;">GuardrailCheck is internal — it is not published to the broker. It gates C3/C4 dispatch and is stored in the AuditRecord via <code>audit.close_record()</code>.</div>
+  </div>
+</div>
+
+<!-- ── PANEL 12: WP3 SIMULATION ── -->
+<div class="step-panel" id="panel12">
+  <div class="step-header">
+    <div class="step-icon" style="background:#0d1a2a;font-size:20px;">🔁</div>
+    <div>
+      <div class="step-label" style="color:#79c0ff;">WP3 / WP7 Integration</div>
+      <div class="step-title">WP3 Simulation Mode</div>
+      <div class="step-subtitle">Separate from dry_run · Full pipeline runs · Dispatch routed to t53.wp3_results instead of pilot tools</div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-bottom:14px;">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>What this mode is</div>
+      <div class="narrative" style="font-size:13px;">
+        WP3 (STAM / D-VISOR) sends <strong>synthetic events</strong> using the same WP5 event schema
+        as real pilots. T5.3 runs the <strong>complete pipeline</strong>: C1 normalises, C5 checks guardrail,
+        C3 translates policy if present, C4 stub adapters generate ActionResults.
+        At the dispatch step, instead of publishing to <code>t53.actions.dispatch</code> (which real
+        pilot tools consume), T5.3 publishes to <strong><code>t53.wp3_results</code></strong> so WP3/WP7
+        consumers receive the full execution trace without triggering any real tool API call.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>How it differs from dry_run</div>
+      <div style="font-size:12.5px;color:#8b949e;line-height:1.8;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+          <div style="background:#1a0d0d;border:1px solid #da3633;border-radius:6px;padding:8px 12px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#f85149;margin-bottom:4px;">dry_run</div>
+            <div style="font-size:11px;color:#6e7681;line-height:1.6;">Guardrail + audit run. Broker dispatch is <strong>skipped entirely</strong>. No publish at all. For local dev / testing without RabbitMQ.</div>
+          </div>
+          <div style="background:#0d1a2a;border:1px solid #1f6feb;border-radius:6px;padding:8px 12px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#79c0ff;margin-bottom:4px;">wp3_simulation</div>
+            <div style="font-size:11px;color:#6e7681;line-height:1.6;">Full pipeline runs. Broker publish <strong>happens</strong> to <code>t53.wp3_results</code>. RabbitMQ must be running. For WP3 integration.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Pipeline flow in WP3 mode</div>
+    <div style="font-size:12.5px;color:#8b949e;line-height:1.7;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #21262d;">
+        <span style="background:#0d2137;color:#58a6ff;padding:4px 10px;border-radius:4px;font-size:12px;">C1 Normalize</span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#2a0d0d;color:#f85149;padding:4px 10px;border-radius:4px;font-size:12px;">C5 Guardrail</span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#0d2a1a;color:#3fb950;padding:4px 10px;border-radius:4px;font-size:12px;">C3 Policy</span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#2a1a0d;color:#ffa657;padding:4px 10px;border-radius:4px;font-size:12px;">C4 Stubs</span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#0d1a2a;border:2px solid #1f6feb;color:#79c0ff;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:700;">t53.wp3_results ✓</span>
+        <span style="color:#6e7681;">instead of</span>
+        <span style="background:#1a1a1a;border:1px dashed #6e7681;color:#6e7681;padding:4px 10px;border-radius:4px;font-size:12px;text-decoration:line-through;">t53.actions.dispatch</span>
+      </div>
+      <div style="padding-top:10px;font-size:12px;">
+        The <code>ActionResult</code> objects carry <code>plugin="wp3_dispatch"</code> and
+        <code>response_code=202</code>. The dispatch message also includes <code>"wp3_simulation": true</code>
+        so consumers can distinguish simulation traffic from live dispatch.
+      </div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-bottom:14px;">
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Environment flags</div>
+      <pre style="font-size:11px;"># Enable WP3 simulation (separate from dry_run):
+<span class="key">VIGILANCE_WP3_SIMULATION</span>=<span class="ok">true</span>
+
+# These are INDEPENDENT flags:
+<span class="key">VIGILANCE_DRY_RUN</span>=<span class="ok">true</span>        <span class="cmt"># skips broker entirely</span>
+<span class="key">VIGILANCE_WP3_SIMULATION</span>=<span class="ok">true</span>  <span class="cmt"># routes to wp3 topic</span></pre>
+      <div style="font-size:12px;color:#6e7681;margin-top:8px;">Set in <code>docker-compose.yml</code> or exported before running <code>uvicorn</code>. Read at startup by <code>service.py</code> and <code>api/app.py</code>.</div>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Message on <code>t53.wp3_results</code></div>
+      <pre style="font-size:11px;">{
+  <span class="key">"request_id"</span>:       <span class="str">"c3d4e5f6-…"</span>,
+  <span class="key">"event_id"</span>:         <span class="str">"UUID from C1"</span>,
+  <span class="key">"pilot"</span>:            <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"sector"</span>:           <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"actions"</span>:          [<span class="str">"isolate_plc"</span>, <span class="str">"notify_soc"</span>],
+  <span class="key">"agent_confidence"</span>: <span class="num">0.92</span>,
+  <span class="key">"wp3_simulation"</span>:   <span class="ok">true</span>,
+  <span class="key">"timestamp"</span>:        <span class="str">"2026-10-22T…Z"</span>
+}</pre>
+    </div>
+  </div>
+
+  <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px 16px;font-size:12px;color:#6e7681;line-height:1.7;">
+    <strong style="color:#8b949e;">Open item:</strong> Broker topic name, synthetic event format, and the WP3/WP7 consumer endpoint
+    need to be agreed with STAM (WP3). Current implementation uses <code>t53.wp3_results</code> as a placeholder.
+    The queue is pre-declared in <code>infra/rabbitmq/definitions.json</code>. Confirm at M7–M9 design sync.
+  </div>
+</div>
+
+<!-- ── PANEL 13: BROKER TOPICS ── -->
+<div class="step-panel" id="panel13">
+  <div class="step-header">
+    <div class="step-icon" style="background:#1a1a0d;font-size:20px;">📡</div>
+    <div>
+      <div class="step-label" style="color:#e3b341;">Message Broker</div>
+      <div class="step-title">RabbitMQ Topic Registry</div>
+      <div class="step-subtitle">All T5.3 topics — direction, producer, consumer, sample payload · Durable queues pre-declared in infra/rabbitmq/definitions.json</div>
+    </div>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+    <thead>
+      <tr style="border-bottom:1px solid #30363d;">
+        <th style="text-align:left;padding:8px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Topic</th>
+        <th style="text-align:left;padding:8px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Direction</th>
+        <th style="text-align:left;padding:8px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Producer</th>
+        <th style="text-align:left;padding:8px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Consumer</th>
+        <th style="text-align:left;padding:8px 10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-size:10px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">pilot.events.raw</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Inbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">Pilot tools (OTE / Siemens)</td>
+        <td style="padding:9px 10px;color:#8b949e;">C1 Normalizer</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">t53.canonical_events</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">C1 (after normalisation)</td>
+        <td style="padding:9px 10px;color:#8b949e;">T5.4 (GFT orchestrator)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">t53.action_requests</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Inbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">T5.4 (GFT)</td>
+        <td style="padding:9px 10px;color:#8b949e;">C5 → C3 → C4</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">t53.actions.dispatch</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">C4 / pipeline._dispatch()</td>
+        <td style="padding:9px 10px;color:#8b949e;">Pilot tool APIs (fire-and-forget)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">t53.results</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">C5 (after audit close)</td>
+        <td style="padding:9px 10px;color:#8b949e;">T5.4 + T5.2 (AEGIS agent)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;">
+        <td style="padding:9px 10px;"><code style="color:#58a6ff;">t53.policy_updates</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">C3 PolicyTranslator</td>
+        <td style="padding:9px 10px;color:#e3b341;">⚠ Undefined — open item (T5.6?)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-yellow">No consumer</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;background:#0d1a2a;">
+        <td style="padding:9px 10px;"><code style="color:#79c0ff;">t53.wp3_results</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">pipeline._dispatch() — wp3 mode only</td>
+        <td style="padding:9px 10px;color:#8b949e;">WP3 / WP7 (STAM/D-VISOR)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-yellow">Impl. pending</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Sample payloads -->
+  <div style="display:flex;flex-direction:column;gap:12px;">
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#58a6ff;"></span>Sample: <code>t53.canonical_events</code> payload</div>
+      <pre style="font-size:11px;">{
+  <span class="key">"event_id"</span>:      <span class="str">"a1b2c3d4-1234-…"</span>,
+  <span class="key">"type"</span>:          <span class="str">"OT_COMMAND_INJECTION"</span>,
+  <span class="key">"pilot"</span>:         <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"severity"</span>:      <span class="str">"CRITICAL"</span>,
+  <span class="key">"timestamp"</span>:     <span class="str">"2026-10-22T09:31:00Z"</span>,
+  <span class="key">"src_ip"</span>:        <span class="str">"10.40.3.77"</span>,
+  <span class="key">"target"</span>:        <span class="str">"PLC-WWTP-RO"</span>,
+  <span class="key">"plc_id"</span>:        <span class="str">"PLC-WWTP-RO"</span>,
+  <span class="key">"scada_zone"</span>:    <span class="str">"Zone-A"</span>,
+  <span class="key">"ot_protocol"</span>:  <span class="str">"OPC-UA"</span>,
+  <span class="key">"ot_safety_flag"</span>: <span class="ok">true</span>
+}</pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#ffa657;"></span>Sample: <code>t53.actions.dispatch</code> payload (production)</div>
+      <pre style="font-size:11px;">{
+  <span class="key">"request_id"</span>:       <span class="str">"c3d4e5f6-…"</span>,
+  <span class="key">"event_id"</span>:         <span class="str">"a1b2c3d4-…"</span>,
+  <span class="key">"pilot"</span>:            <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"sector"</span>:           <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"actions"</span>:          [<span class="str">"isolate_plc"</span>, <span class="str">"notify_soc"</span>, <span class="str">"create_incident"</span>],
+  <span class="key">"agent_confidence"</span>: <span class="num">0.92</span>,
+  <span class="key">"wp3_simulation"</span>:   <span class="ok">false</span>,
+  <span class="key">"timestamp"</span>:        <span class="str">"2026-10-22T09:31:05Z"</span>
+}
+<span class="cmt">// Published fire-and-forget. Pilot tools ACK to their own monitoring.
+// T5.3 does NOT wait for downstream responses.</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#3fb950;"></span>Sample: <code>t53.results</code> payload (ExecutionResult)</div>
+      <pre style="font-size:11px;">{
+  <span class="key">"request_id"</span>:      <span class="str">"c3d4e5f6-…"</span>,
+  <span class="key">"event_id"</span>:        <span class="str">"a1b2c3d4-…"</span>,
+  <span class="key">"pilot"</span>:           <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"action_results"</span>:  [
+    { <span class="key">"action"</span>: <span class="str">"isolate_plc"</span>, <span class="key">"plugin"</span>: <span class="str">"broker_dispatch"</span>, <span class="key">"success"</span>: <span class="ok">true</span>, <span class="key">"response_code"</span>: <span class="num">202</span> },
+    { <span class="key">"action"</span>: <span class="str">"notify_soc"</span>,  <span class="key">"plugin"</span>: <span class="str">"broker_dispatch"</span>, <span class="key">"success"</span>: <span class="ok">true</span>, <span class="key">"response_code"</span>: <span class="num">202</span> }
+  ],
+  <span class="key">"overall_success"</span>: <span class="ok">true</span>,
+  <span class="key">"timestamp"</span>:       <span class="str">"2026-10-22T09:31:05Z"</span>
+}
+<span class="cmt">// Consumed by T5.4 (orchestration feedback) and T5.2 (AEGIS agent state update)</span></pre>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><span class="dot" style="background:#7ee787;"></span>Sample: <code>t53.policy_updates</code> payload</div>
+      <pre style="font-size:11px;">{
+  <span class="key">"request_id"</span>: <span class="str">"c3d4e5f6-…"</span>,
+  <span class="key">"event_id"</span>:   <span class="str">"a1b2c3d4-…"</span>,
+  <span class="key">"pilot"</span>:      <span class="str">"INDUSTRY_4"</span>,
+  <span class="key">"nl_policy"</span>:  <span class="str">"Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours"</span>,
+  <span class="key">"rego_rule"</span>:  <span class="str">"package vigilance.siemens.ot\ndefault allow = false\nallow {\n  input.protocol != \"OPC-UA\"\n  input.src_zone != \"Zone-B\"\n}"</span>,
+  <span class="key">"timestamp"</span>:  <span class="str">"2026-10-22T09:31:06Z"</span>
+}
+<span class="cmt">// Downstream consumer undefined — open item M7–M9 (T5.6 / ETRA)</span></pre>
+    </div>
+
+  </div>
+
+  <div style="background:#2a1a00;border:1px solid #9e6a03;border-radius:8px;padding:12px 16px;margin-top:14px;font-size:12px;color:#e3b341;line-height:1.7;">
+    <strong>Removed:</strong> <code>dt.events.synthetic</code> — this queue was a leftover from the
+    removed Digital Twin mode (PR #28, May 2026). It has been removed from
+    <code>infra/rabbitmq/definitions.json</code>. If you see it in a running broker, it is a stale
+    declaration from before the queue file was cleaned up — it carries no traffic.
+  </div>
+</div>
+
 <div class="nav-footer">
   <button class="nav-btn secondary" id="btnPrev" onclick="navigate(-1)" disabled>← Previous</button>
-  <span class="progress-text" id="progressText">Step 1 of 11</span>
+  <span class="progress-text" id="progressText">Step 1 of 14</span>
   <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">Next →</button>
 </div>
 </main>
@@ -1331,7 +1739,7 @@
 
 <script>
   const BASE_URL = 'http://localhost:8000';
-  const TOTAL = 11;
+  const TOTAL = 14;
   let cur = 0;
   let capturedEventId      = null;
   let capturedEventIdLLM   = null;
@@ -1346,7 +1754,7 @@
 
   const nodeMap = [
     ['n0'],['n1','n6'],['nT4'],['n5','n3','n4','n6'],['n3','n4'],['n4'],['nT'],
-    ['n1','n6','n5','n3','n4','nT'],[],['n3']
+    ['n1','n6','n5','n3','n4','nT'],[],['n3'],[],['n5'],[],[],
   ];
 
   // ── helpers ──────────────────────────────────────────────────────────────────
@@ -1516,6 +1924,7 @@
     if (w) w.style.display = (cur===3 && !capturedRequestId) ? 'block' : 'none';
     if (cur === 2) renderT54Simulation();
     if (cur === 10) loadIntegrations();
+    if (cur === 12) renderWp3Diagram();
   }
 
   function navigate(dir){ goTo(Math.max(0, Math.min(TOTAL-1, cur+dir))); }
@@ -2118,6 +2527,10 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+
+  function renderWp3Diagram() {
+    // WP3 panel is static HTML; nothing to render dynamically
+  }
 
   mountEidRows();
   goTo(0);

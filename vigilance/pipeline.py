@@ -36,6 +36,7 @@ TOPIC_ACTION_REQUESTS  = "t53.action_requests"
 TOPIC_RESULTS          = "t53.results"
 TOPIC_POLICY_UPDATES   = "t53.policy_updates"   # consumed by T5.5 for ZTA blueprint refinement
 TOPIC_ACTIONS_DISPATCH = "t53.actions.dispatch"  # consumed by pilot tools (fire-and-forget)
+TOPIC_WP3_RESULTS      = "t53.wp3_results"       # WP3 simulation output — synthetic dispatch results for WP3/WP7
 
 _SUPPORTED_PILOTS = {"TELECOM", "INDUSTRY_4", "MARITIME", "FINANCE"}
 
@@ -90,10 +91,15 @@ class T53Pipeline:
         dry_run: When True, guardrail and audit run but broker dispatch is
                  skipped. Used in tests and development to avoid needing a
                  live RabbitMQ or pilot tool connections.
+        wp3_simulation: When True, full pipeline runs (C1→C5→C3→C4 stubs)
+                        but dispatch publishes to TOPIC_WP3_RESULTS instead of
+                        TOPIC_ACTIONS_DISPATCH. Separate from dry_run — broker
+                        publish still happens, just to the WP3 output topic.
     """
 
-    def __init__(self, dry_run: bool = False) -> None:
+    def __init__(self, dry_run: bool = False, wp3_simulation: bool = False) -> None:
         self._dry_run = dry_run
+        self._wp3_simulation = wp3_simulation
 
         # C6 — all four sector profiles loaded at startup
         self._profiles: dict[str, SectorProfile] = ProfileManager.load_all_profiles()
@@ -360,6 +366,9 @@ class T53Pipeline:
         elif self._dry_run:
             logger.info("[C5] dry-run — skipping broker dispatch")
             result = self._dry_run_result(request, event, profile)
+        elif self._wp3_simulation:
+            logger.info("[C5] wp3-simulation — dispatching to WP3 output topic")
+            result, rego_rule = self._dispatch(request, event, profile, wp3_mode=True)
         else:
             result, rego_rule = self._dispatch(request, event, profile)
 
@@ -412,8 +421,15 @@ class T53Pipeline:
         request: ActionRequest,
         event: CanonicalEvent,
         profile: SectorProfile,
+        wp3_mode: bool = False,
     ) -> tuple[ExecutionResult, str | None]:
-        """C3+C4 — translate policy to Rego, fire-and-forget to T5.5 and pilot tools."""
+        """C3+C4 — translate policy to Rego, fire-and-forget to T5.5 and pilot tools.
+
+        Args:
+            wp3_mode: When True, publish to TOPIC_WP3_RESULTS instead of
+                      TOPIC_ACTIONS_DISPATCH so WP3/WP7 consumers receive
+                      the synthetic dispatch without hitting real pilot tools.
+        """
         rego: str | None = None
         # C3: NL policy → Rego → T5.5 ZTA blueprint refinement
         if request.policy_update:
@@ -430,17 +446,19 @@ class T53Pipeline:
             })
             logger.info(f"[C3] Policy → {TOPIC_POLICY_UPDATES} ({len(rego)} chars, pilot={profile.pilot})")
 
-        # C4: actions → pilot tools (fire-and-forget)
-        self._broker.publish(TOPIC_ACTIONS_DISPATCH, {
+        # C4: actions → pilot tools (or WP3 output topic in simulation mode)
+        dispatch_topic = TOPIC_WP3_RESULTS if wp3_mode else TOPIC_ACTIONS_DISPATCH
+        self._broker.publish(dispatch_topic, {
             "request_id":       request.request_id,
             "event_id":         request.event_id,
             "pilot":            profile.pilot,
             "sector":           profile.sector,
             "actions":          request.actions,
             "agent_confidence": request.agent_confidence,
+            "wp3_simulation":   wp3_mode,
             "timestamp":        datetime.now(timezone.utc).isoformat(),
         })
-        logger.info(f"[C4] Actions → {TOPIC_ACTIONS_DISPATCH}: {request.actions} (pilot={profile.pilot})")
+        logger.info(f"[C4] Actions → {dispatch_topic}: {request.actions} (pilot={profile.pilot}, wp3={wp3_mode})")
 
         return ExecutionResult(
             request_id=request.request_id,
@@ -449,11 +467,11 @@ class T53Pipeline:
             action_results=[
                 ActionResult(
                     action=action,
-                    plugin="broker_dispatch",
+                    plugin="wp3_dispatch" if wp3_mode else "broker_dispatch",
                     success=True,
                     latency_ms=0,
                     response_code=202,
-                    message=f"Dispatched via {TOPIC_ACTIONS_DISPATCH}",
+                    message=f"Dispatched via {dispatch_topic}",
                 )
                 for action in request.actions
             ],

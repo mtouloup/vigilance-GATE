@@ -25,12 +25,13 @@ TOPIC_EVENTS_RAW = "pilot.events.raw"
 
 
 def run() -> None:
-    amqp_url = os.getenv("AMQP_URL", "amqp://vigilance:vigilance@rabbitmq:5672/")
-    dry_run  = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
+    amqp_url        = os.getenv("AMQP_URL", "amqp://vigilance:vigilance@rabbitmq:5672/")
+    dry_run         = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
+    wp3_simulation  = os.getenv("VIGILANCE_WP3_SIMULATION", "").lower() in ("1", "true", "yes")
 
-    logger.info(f"Starting T5.3 service: pilots=ALL dry_run={dry_run} amqp={amqp_url}")
+    logger.info(f"Starting T5.3 service: pilots=ALL dry_run={dry_run} wp3_simulation={wp3_simulation} amqp={amqp_url}")
 
-    pipeline = T53Pipeline(dry_run=dry_run)
+    pipeline = T53Pipeline(dry_run=dry_run, wp3_simulation=wp3_simulation)
 
     def handle_raw_event(message: dict) -> None:
         raw = message.get("raw", message)

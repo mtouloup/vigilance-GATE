@@ -37,13 +37,6 @@
       "arguments": {}
     },
     {
-      "name": "dt.events.synthetic",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {}
-    },
-    {
       "name": "t53.canonical_events",
       "vhost": "/",
       "durable": true,
@@ -66,6 +59,13 @@
     },
     {
       "name": "t53.actions.dispatch",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "t53.wp3_results",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
