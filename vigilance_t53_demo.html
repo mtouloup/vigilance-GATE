@@ -1489,45 +1489,52 @@
     <div class="step-icon" style="background:#0d1a2a;font-size:20px;">🔁</div>
     <div>
       <div class="step-label" style="color:#79c0ff;">WP3 / WP7 Integration</div>
-      <div class="step-title">WP3 Simulation Mode</div>
-      <div class="step-subtitle">Separate from dry_run · Full pipeline runs · Dispatch routed to t53.wp3_results instead of pilot tools</div>
+      <div class="step-title">Per-Event WP3 Routing</div>
+      <div class="step-subtitle">Mixed deployment — pilot events and WP3 synthetic events handled in the same container · Routing determined per-event, not by global flag</div>
     </div>
   </div>
 
   <div class="two-col" style="margin-bottom:14px;">
     <div class="card">
-      <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>What this mode is</div>
+      <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>How per-event routing works</div>
       <div class="narrative" style="font-size:13px;">
-        WP3 (STAM / D-VISOR) sends <strong>synthetic events</strong> using the same WP5 event schema
-        as real pilots. T5.3 runs the <strong>complete pipeline</strong>: C1 normalises, C5 checks guardrail,
-        C3 translates policy if present, C4 stub adapters generate ActionResults.
-        At the dispatch step, instead of publishing to <code>t53.actions.dispatch</code> (which real
-        pilot tools consume), T5.3 publishes to <strong><code>t53.wp3_results</code></strong> so WP3/WP7
-        consumers receive the full execution trace without triggering any real tool API call.
+        WP3 (STAM / D-VISOR) submits <strong>synthetic events</strong> via a dedicated input path —
+        either the broker topic <code>wp3.events.raw</code> or the REST endpoint
+        <code>POST /api/v1/wp3/events</code>. Both set a <code>wp3_source=True</code> flag stored
+        in <code>_event_cache[event_id]</code>. When T5.4 later sends an <code>ActionRequest</code>
+        for that event, <code>execute_action_request()</code> reads <code>wp3_source</code> from the
+        cache and routes the dispatch to <strong><code>t53.wp3_results</code></strong> instead of
+        <code>t53.actions.dispatch</code>. No global env var is needed — both real pilots and WP3
+        events can flow through the same running container simultaneously.
       </div>
     </div>
     <div class="card">
-      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>How it differs from dry_run</div>
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Two input paths for WP3</div>
       <div style="font-size:12.5px;color:#8b949e;line-height:1.8;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div style="background:#1a0d0d;border:1px solid #da3633;border-radius:6px;padding:8px 12px;">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#f85149;margin-bottom:4px;">dry_run</div>
-            <div style="font-size:11px;color:#6e7681;line-height:1.6;">Guardrail + audit run. Broker dispatch is <strong>skipped entirely</strong>. No publish at all. For local dev / testing without RabbitMQ.</div>
+          <div style="background:#0d2137;border:1px solid #1f6feb;border-radius:6px;padding:8px 12px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#79c0ff;margin-bottom:4px;">Broker (push)</div>
+            <div style="font-size:11px;color:#6e7681;line-height:1.6;">Publish to <code>wp3.events.raw</code>. Handled by Thread-3 in <code>service.py</code>. Same pika pattern as pilot tools.</div>
           </div>
-          <div style="background:#0d1a2a;border:1px solid #1f6feb;border-radius:6px;padding:8px 12px;">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#79c0ff;margin-bottom:4px;">wp3_simulation</div>
-            <div style="font-size:11px;color:#6e7681;line-height:1.6;">Full pipeline runs. Broker publish <strong>happens</strong> to <code>t53.wp3_results</code>. RabbitMQ must be running. For WP3 integration.</div>
+          <div style="background:#0d2137;border:1px solid #388bfd;border-radius:6px;padding:8px 12px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#58a6ff;margin-bottom:4px;">REST (pull)</div>
+            <div style="font-size:11px;color:#6e7681;line-height:1.6;"><code>POST /api/v1/wp3/events</code> — same body as <code>/api/v1/events</code>. Returns 202 + CanonicalEvent. Sets <code>wp3_source=True</code>.</div>
           </div>
         </div>
+        <div style="font-size:11px;color:#6e7681;">Either path runs C1 normalisation, stores the event in SQLite and <code>_event_cache</code>, and publishes to <code>t53.canonical_events</code> for T5.4.</div>
       </div>
     </div>
   </div>
 
   <div class="card" style="margin-bottom:14px;">
-    <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Pipeline flow in WP3 mode</div>
+    <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Pipeline flow — per-event WP3 routing</div>
     <div style="font-size:12.5px;color:#8b949e;line-height:1.7;">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid #21262d;">
-        <span style="background:#0d2137;color:#58a6ff;padding:4px 10px;border-radius:4px;font-size:12px;">C1 Normalize</span>
+        <span style="background:#0d1a2a;border:1px solid #388bfd;color:#79c0ff;padding:4px 10px;border-radius:4px;font-size:12px;">wp3.events.raw<br><span style="font-size:10px;color:#6e7681;">or POST /api/v1/wp3/events</span></span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#0d2137;color:#58a6ff;padding:4px 10px;border-radius:4px;font-size:12px;">C1 Normalize<br><span style="font-size:10px;color:#6e7681;">wp3_source=True stored</span></span>
+        <span style="color:#6e7681;">→</span>
+        <span style="background:#1a0d2a;color:#d2a8ff;padding:4px 10px;border-radius:4px;font-size:12px;">t53.canonical_events<br><span style="font-size:10px;color:#6e7681;">T5.4 receives</span></span>
         <span style="color:#6e7681;">→</span>
         <span style="background:#2a0d0d;color:#f85149;padding:4px 10px;border-radius:4px;font-size:12px;">C5 Guardrail</span>
         <span style="color:#6e7681;">→</span>
@@ -1536,27 +1543,28 @@
         <span style="background:#2a1a0d;color:#ffa657;padding:4px 10px;border-radius:4px;font-size:12px;">C4 Stubs</span>
         <span style="color:#6e7681;">→</span>
         <span style="background:#0d1a2a;border:2px solid #1f6feb;color:#79c0ff;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:700;">t53.wp3_results ✓</span>
-        <span style="color:#6e7681;">instead of</span>
-        <span style="background:#1a1a1a;border:1px dashed #6e7681;color:#6e7681;padding:4px 10px;border-radius:4px;font-size:12px;text-decoration:line-through;">t53.actions.dispatch</span>
       </div>
       <div style="padding-top:10px;font-size:12px;">
-        The <code>ActionResult</code> objects carry <code>plugin="wp3_dispatch"</code> and
-        <code>response_code=202</code>. The dispatch message also includes <code>"wp3_simulation": true</code>
-        so consumers can distinguish simulation traffic from live dispatch.
+        <code>ActionResult</code> objects carry <code>plugin="wp3_dispatch"</code> and <code>response_code=202</code>.
+        The dispatch payload includes <code>"wp3_simulation": true</code> so WP7 consumers can identify the source.
+        Real pilot events arriving on <code>pilot.events.raw</code> simultaneously route to <code>t53.actions.dispatch</code> — unaffected.
       </div>
     </div>
   </div>
 
   <div class="two-col" style="margin-bottom:14px;">
     <div class="card">
-      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Environment flags</div>
-      <pre style="font-size:11px;"># Enable WP3 simulation (separate from dry_run):
-<span class="key">VIGILANCE_WP3_SIMULATION</span>=<span class="ok">true</span>
+      <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Service threads</div>
+      <pre style="font-size:11px;"><span class="cmt"># service.py — three independent pika connections</span>
+Thread-1: pilot.events.raw       <span class="cmt"># real pilot tools</span>
+           → ingest_event(wp3_source=<span class="ok">False</span>)
 
-# These are INDEPENDENT flags:
-<span class="key">VIGILANCE_DRY_RUN</span>=<span class="ok">true</span>        <span class="cmt"># skips broker entirely</span>
-<span class="key">VIGILANCE_WP3_SIMULATION</span>=<span class="ok">true</span>  <span class="cmt"># routes to wp3 topic</span></pre>
-      <div style="font-size:12px;color:#6e7681;margin-top:8px;">Set in <code>docker-compose.yml</code> or exported before running <code>uvicorn</code>. Read at startup by <code>service.py</code> and <code>api/app.py</code>.</div>
+Thread-2: t53.action_requests    <span class="cmt"># T5.4 ActionRequests</span>
+           → execute_action_request()
+           <span class="cmt"># reads wp3_source from _event_cache</span>
+
+Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
+           → ingest_event(wp3_source=<span class="ok">True</span>)</pre>
     </div>
     <div class="card">
       <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Message on <code>t53.wp3_results</code></div>
@@ -1574,9 +1582,11 @@
   </div>
 
   <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:12px 16px;font-size:12px;color:#6e7681;line-height:1.7;">
-    <strong style="color:#8b949e;">Open item:</strong> Broker topic name, synthetic event format, and the WP3/WP7 consumer endpoint
-    need to be agreed with STAM (WP3). Current implementation uses <code>t53.wp3_results</code> as a placeholder.
-    The queue is pre-declared in <code>infra/rabbitmq/definitions.json</code>. Confirm at M7–M9 design sync.
+    <strong style="color:#8b949e;">Open item:</strong> WP7 consumer endpoint URL must still be agreed with STAM/D-VISOR.
+    <code>wp7_consumer</code> placeholder is registered in <code>integrations.yaml</code>.
+    Once WP7 provides their URL, register it via <code>PATCH /api/v1/integrations/wp7_consumer</code>
+    or env var <code>INTEGRATION_WP7_CONSUMER_URL</code> — no restart needed.
+    Confirm at M7–M9 design sync.
   </div>
 </div>
 
@@ -1606,7 +1616,14 @@
         <td style="padding:9px 10px;"><code style="color:#58a6ff;">pilot.events.raw</code></td>
         <td style="padding:9px 10px;color:#8b949e;">Inbound</td>
         <td style="padding:9px 10px;color:#8b949e;">Pilot tools (OTE / Siemens)</td>
-        <td style="padding:9px 10px;color:#8b949e;">C1 Normalizer</td>
+        <td style="padding:9px 10px;color:#8b949e;">C1 Normalizer (Thread-1)</td>
+        <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #21262d;background:#0d1a2a;">
+        <td style="padding:9px 10px;"><code style="color:#79c0ff;">wp3.events.raw</code></td>
+        <td style="padding:9px 10px;color:#8b949e;">Inbound</td>
+        <td style="padding:9px 10px;color:#8b949e;">WP3 / STAM / D-VISOR</td>
+        <td style="padding:9px 10px;color:#8b949e;">C1 Normalizer (Thread-3) — sets wp3_source=True</td>
         <td style="padding:9px 10px;"><span class="tag tag-green">Live</span></td>
       </tr>
       <tr style="border-bottom:1px solid #21262d;">
@@ -1647,9 +1664,9 @@
       <tr style="border-bottom:1px solid #21262d;background:#0d1a2a;">
         <td style="padding:9px 10px;"><code style="color:#79c0ff;">t53.wp3_results</code></td>
         <td style="padding:9px 10px;color:#8b949e;">Outbound</td>
-        <td style="padding:9px 10px;color:#8b949e;">pipeline._dispatch() — wp3 mode only</td>
-        <td style="padding:9px 10px;color:#8b949e;">WP3 / WP7 (STAM/D-VISOR)</td>
-        <td style="padding:9px 10px;"><span class="tag tag-yellow">Impl. pending</span></td>
+        <td style="padding:9px 10px;color:#8b949e;">pipeline._dispatch() — when wp3_source=True</td>
+        <td style="padding:9px 10px;color:#8b949e;">WP7 (STAM/D-VISOR) — URL pending</td>
+        <td style="padding:9px 10px;"><span class="tag tag-yellow">Consumer TBD</span></td>
       </tr>
     </tbody>
   </table>
