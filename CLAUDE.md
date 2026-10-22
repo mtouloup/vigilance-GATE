@@ -2,7 +2,7 @@
 
 > **This file is the persistent memory and operating manual for this repository.**
 > Update it whenever architecture changes, schemas evolve, or milestone status shifts.
-> Last updated: October 2026 — per-event WP3 routing implemented: `wp3.events.raw` input topic + `POST /api/v1/wp3/events` REST endpoint; `wp3_source` flag tracked per-event in `_event_cache` so mixed pilot+WP3 deployments work in a single container; `VIGILANCE_WP3_SIMULATION` global env var removed; `wp7_consumer` placeholder added to `integrations.yaml`; REST API surface now 21 endpoints; three broker consumer threads in `service.py`.
+> Last updated: October 2026 — per-event WP3 routing implemented: `wp3.events.raw` input topic + `POST /api/v1/wp3/events` REST endpoint; `wp3_source` flag tracked per-event in `_event_cache` so mixed pilot+WP3 deployments work in a single container; `VIGILANCE_WP3_SIMULATION` global env var removed; `wp7_consumer` placeholder added to `integrations.yaml`; REST API surface now 21 endpoints; three broker consumer threads in `service.py`. Demo UI expanded to 15 panels: C1' WP3 panel (panel 14) added with Step A (OT JSON structured), Step A′ (LLM fallback), Step B (full pipeline → `t53.wp3_results`); panel 12 updated to per-event routing architecture; panel 13 updated with `wp3.events.raw` input topic row.
 
 ---
 
@@ -50,7 +50,7 @@ vigilance-GATE/
 │   ├── vigilance.db                   ← SQLite store (events, action_requests, results, audit_records)
 │   └── integrations_overrides.yaml   ← persisted partner URL overrides (runtime PATCH writes)
 │
-├── vigilance_t53_demo.html            ← 14-panel demo UI served at GET / (same origin, no CORS)
+├── vigilance_t53_demo.html            ← 15-panel demo UI served at GET / (same origin, no CORS)
 ├── integrations.yaml                  ← declarative integration endpoint registry (10 partners)
 │
 ├── vigilance/                         ← main application package
@@ -201,7 +201,7 @@ The REST API (FastAPI, port 8000, auto-docs at `/api/docs`) exposes the full pip
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/` | 14-panel interactive demo UI (served directly from `vigilance_t53_demo.html`) |
+| `GET` | `/` | 15-panel interactive demo UI (served directly from `vigilance_t53_demo.html`) |
 
 **System**
 
@@ -685,6 +685,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 - [ ] **Real C4 adapters** — all adapters currently return canned stub responses. Real implementations against pilot tool APIs are M10–M15, scoped to OTE and Siemens only.
 - [ ] **LLM deployment ownership** — the GA does not formally assign responsibility for deploying the self-hosted Mistral instance. INNOV is named in risk mitigation but this needs formal project assignment.
 - [ ] **WP3/WP7 consumer endpoint agreement** — Per-event WP3 routing is implemented (`wp3.events.raw` input topic, `POST /api/v1/wp3/events`, `wp3_source` flag, output to `t53.wp3_results`). The `wp7_consumer` entry in `integrations.yaml` holds a placeholder URL. The actual WP7 REST API URL must still be agreed with STAM/D-VISOR. Once provided, register via `PATCH /api/v1/integrations/wp7_consumer` or env var `INTEGRATION_WP7_CONSUMER_URL`.
+- [ ] **WP3 synthetic event format agreement (M7–M9)** — INNOV recommendation: WP3/STAM adopts **OT JSON** for structured OT simulation scenarios (zero LLM cost, same parser Siemens uses) and **ECS** for cyber/network scenarios. LLM fallback (Mistral 7B) available for novel narrative events that cannot be expressed in a structured format. Must be formally agreed with STAM before pilot integration. Demo panel 14 (C1') documents all three paths with parser guidance.
 - [ ] **SME accessibility** — the GA requires "SME-accessible deployment". A concrete operational guide for non-expert deployment is missing.
 - [ ] **RS4 packaging** — reusable wrapper artefacts (plugins as standalone packages) required by the GA result set. Planned for M18 prototype. No packaging design exists yet.
 - [ ] **D5.1 contribution plan** — INNOV's specific contribution sections to D5.1 are not yet formally assigned within the consortium.
@@ -702,7 +703,7 @@ Uses `ollama list` (not curl) — curl is not reliably present in the `ollama/ol
 | M5 | ✅ Done | Framework implemented: C1, C3, C4, C5, C6 + broker + LLM + Docker |
 | M6 | ✅ Done | CanonicalEvent / ActionRequest / GuardrailCheck / ExecutionResult / ActionResult / AuditRecord schemas frozen with T5.4 (GFT); C4 verb catalogue documented for OTE and Siemens; C2/AgentLoop and STANDALONE/DIGITAL_TWIN modes removed (PR #28) |
 | M6+ | ✅ Done | Full REST API surface (15 endpoints); SQLite persistence layer; decoupled C5 guardrail API; OPA binary in Docker image; PolicyTranslator few-shot prompt improved; unknown pilots hard-rejected; `canonical_event` returned in event submission response |
-| Oct-2026 | ✅ Done | Integration endpoint registry (`integrations.yaml` + `vigilance/integrations.py` + 4 REST endpoints); demo UI served at `GET /` from FastAPI; REST API surface now 21 endpoints; README fully updated to reflect current state; INNOV scope enforced throughout. Per-event WP3 routing: `wp3.events.raw` input topic + `POST /api/v1/wp3/events`; `wp3_source` flag per event in `_event_cache`; three broker consumer threads; `wp7_consumer` placeholder in integrations; `t53.wp3_results` queue; `dt.events.synthetic` stale queue removed; demo UI expanded to 14 panels |
+| Oct-2026 | ✅ Done | Integration endpoint registry (`integrations.yaml` + `vigilance/integrations.py` + 4 REST endpoints); demo UI served at `GET /` from FastAPI; REST API surface now 21 endpoints; INNOV scope enforced throughout. Per-event WP3 routing: `wp3.events.raw` input topic + `POST /api/v1/wp3/events`; `wp3_source` per-event flag in `_event_cache`; three broker consumer threads; `wp7_consumer` placeholder in integrations; `t53.wp3_results` queue; `dt.events.synthetic` stale queue removed. Demo UI expanded to 15 panels: panel 14 (C1' WP3 full scenario — Step A structured OT JSON, Step A′ LLM fallback, Step B full pipeline → `t53.wp3_results`); panel 12 updated (per-event routing); panel 13 updated (`wp3.events.raw` row) |
 | M7–M9 | 🔄 Next | API key auth enforcement; downstream `t53.policy_updates` consumer discussion with T5.6; T5.6 regulatory constraints format; deliver raw pilot event data to T5.5 (KOM action) |
 | M10–M15 | 🔜 Planned | Real C4 adapter implementations (OTE + Siemens); C3 target resolution from CanonicalEvent; pilot validation data |
 
