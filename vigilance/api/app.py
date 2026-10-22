@@ -24,6 +24,9 @@ Audit:
   GET  /api/v1/audit                                   List AuditRecords
   GET  /api/v1/audit/{audit_id}                        Single AuditRecord
 
+WP3 (synthetic events):
+  POST /api/v1/wp3/events                              WP3 synthetic event → C1 normalize → broker; dispatch → t53.wp3_results (202)
+
 Integrations:
   GET   /api/v1/integrations                           List all declared partner endpoints
   GET   /api/v1/integrations/{partner_id}              Single partner entry
@@ -66,9 +69,8 @@ _pipeline: T53Pipeline | None = None
 def get_pipeline() -> T53Pipeline:
     global _pipeline
     if _pipeline is None:
-        dry_run        = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
-        wp3_simulation = os.getenv("VIGILANCE_WP3_SIMULATION", "").lower() in ("1", "true", "yes")
-        _pipeline = T53Pipeline(dry_run=dry_run, wp3_simulation=wp3_simulation)
+        dry_run   = os.getenv("VIGILANCE_DRY_RUN", "").lower() in ("1", "true", "yes")
+        _pipeline = T53Pipeline(dry_run=dry_run)
     return _pipeline
 
 
@@ -275,6 +277,36 @@ def get_event(event_id: str) -> JSONResponse:
     if event is None:
         raise HTTPException(status_code=404, detail=f"Event '{event_id}' not found.")
     return JSONResponse(status_code=200, content=event)
+
+
+@app.post("/api/v1/wp3/events", tags=["WP3"])
+def ingest_wp3_event(body: RawEventRequest) -> JSONResponse:
+    """WP3 input — submit a synthetic raw event into the full T5.3 pipeline.
+
+    Identical to POST /api/v1/events but marks the event as wp3_source=True
+    so that when T5.4 later dispatches an ActionRequest for this event,
+    the result is published to t53.wp3_results instead of t53.actions.dispatch.
+    Returns 202 Accepted + CanonicalEvent.
+    """
+    pipeline = get_pipeline()
+    try:
+        event = pipeline.ingest_event(body.raw, wp3_source=True)
+    except Exception as exc:
+        logger.error(f"[WP3] Ingest error: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "message": "WP3 event accepted — CanonicalEvent published to t53.canonical_events; dispatch will route to t53.wp3_results.",
+            "event_id": event.event_id,
+            "pilot": event.pilot,
+            "type": event.type,
+            "severity": event.severity,
+            "wp3_source": True,
+            "canonical_event": event.model_dump(mode="json"),
+        },
+    )
 
 
 @app.get("/api/v1/results/{request_id}", tags=["Results"])

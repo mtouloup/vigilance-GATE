@@ -48,6 +48,19 @@ wp5_tasks:
       Receives ExecutionResults published on t53.results for agent
       improvement and MLOps feedback loop.
 
+  - id: wp7_consumer
+    label: "WP7 Consumer API"
+    org: "TBD"
+    category: wp5_task
+    base_url: ""
+    endpoints:
+      results_sink: "/api/wp3-results"
+    description: >
+      WP7 (STAM/D-VISOR) consumer for T5.3 WP3 simulation results.
+      T5.3 publishes synthetic-event pipeline results to t53.wp3_results;
+      this entry holds the WP7 REST API URL once the partner provides it.
+      Override at runtime: INTEGRATION_WP7_CONSUMER_URL env var or PATCH /api/v1/integrations/wp7_consumer.
+
 # Pilot tool endpoints — OTE (TELECOM, Greece)
 # INNOV validation scope: OTE (T6.3) and Siemens (T6.5) only.
 pilot_tools:

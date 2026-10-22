@@ -91,15 +91,10 @@ class T53Pipeline:
         dry_run: When True, guardrail and audit run but broker dispatch is
                  skipped. Used in tests and development to avoid needing a
                  live RabbitMQ or pilot tool connections.
-        wp3_simulation: When True, full pipeline runs (C1→C5→C3→C4 stubs)
-                        but dispatch publishes to TOPIC_WP3_RESULTS instead of
-                        TOPIC_ACTIONS_DISPATCH. Separate from dry_run — broker
-                        publish still happens, just to the WP3 output topic.
     """
 
-    def __init__(self, dry_run: bool = False, wp3_simulation: bool = False) -> None:
+    def __init__(self, dry_run: bool = False) -> None:
         self._dry_run = dry_run
-        self._wp3_simulation = wp3_simulation
 
         # C6 — all four sector profiles loaded at startup
         self._profiles: dict[str, SectorProfile] = ProfileManager.load_all_profiles()
@@ -142,7 +137,7 @@ class T53Pipeline:
         # SQLite persistence
         self._db = Database()
 
-        logger.info(f"[T53Pipeline] Initialized: pilots={list(self._profiles.keys())} dry_run={dry_run}")
+        logger.info(f"[T53Pipeline] Initialized: pilots={list(self._profiles.keys())} dry_run={dry_run} (wp3 routing is per-event)")
 
     # ── Profile + adapter lookup ───────────────────────────────────────────────
 
@@ -161,12 +156,20 @@ class T53Pipeline:
 
     # ── C1: Ingest half ───────────────────────────────────────────────────────
 
-    def ingest_event(self, raw_event: str | dict) -> CanonicalEvent:
+    def ingest_event(self, raw_event: str | dict, wp3_source: bool = False) -> CanonicalEvent:
         """C1 — normalize raw event, cache it, and publish to t53.canonical_events.
 
         T5.4 consumes the published CanonicalEvent, runs agentic reasoning
         (with T5.1 RAG + T5.2 agent selection), and dispatches an ActionRequest
         back to T5.3 via t53.action_requests.
+
+        Args:
+            raw_event: Raw log string or dict from a pilot tool or WP3.
+            wp3_source: True when the event originated from WP3 (arrived via
+                        wp3.events.raw topic or POST /api/v1/wp3/events).
+                        Stored in the event cache so that the subsequent
+                        execute_action_request() call routes dispatch to
+                        t53.wp3_results instead of t53.actions.dispatch.
         """
         logger.info("[C1] Normalizing event...")
         meta = self._normalizer.normalize_with_meta(raw_event)
@@ -195,6 +198,7 @@ class T53Pipeline:
             "parser_used":    meta.parser_used,
             "c1_llm_invoked": meta.llm_invoked,
             "c1_llm_fields":  meta.llm_fields,
+            "wp3_source":     wp3_source,
         }
         self._db.upsert_event(
             canonical_event=event_dict,
@@ -204,7 +208,7 @@ class T53Pipeline:
             c1_llm_fields=meta.llm_fields,
         )
         self._broker.publish(TOPIC_CANONICAL_EVENTS, event_dict)
-        logger.info(f"[C1] CanonicalEvent → {TOPIC_CANONICAL_EVENTS} (awaiting T5.4 ActionRequest)")
+        logger.info(f"[C1] CanonicalEvent → {TOPIC_CANONICAL_EVENTS} (awaiting T5.4 ActionRequest) wp3_source={wp3_source}")
         return event
 
     # ── C5+C3+C4: Execute half ────────────────────────────────────────────────
@@ -237,13 +241,18 @@ class T53Pipeline:
             )
             c1_ctx = {"raw_event": None, "parser_used": "UNKNOWN",
                       "c1_llm_invoked": False, "c1_llm_fields": None}
+            wp3_source = False
         else:
             event = cached["event"]
             c1_ctx = {k: cached[k] for k in ("raw_event", "parser_used",
                                               "c1_llm_invoked", "c1_llm_fields")}
+            wp3_source = cached.get("wp3_source", False)
+
+        if wp3_source:
+            logger.info(f"[C5] WP3-sourced event — dispatch will route to {TOPIC_WP3_RESULTS}")
 
         profile = self._profile_for(event.pilot)
-        return self._guardrail_and_execute(request, event, profile, c1_ctx)
+        return self._guardrail_and_execute(request, event, profile, c1_ctx, wp3_source=wp3_source)
 
     # ── Decoupled guardrail API ───────────────────────────────────────────────
 
@@ -328,6 +337,7 @@ class T53Pipeline:
         event: CanonicalEvent,
         profile: SectorProfile,
         c1_ctx: dict | None = None,
+        wp3_source: bool = False,
     ) -> tuple[ExecutionResult, str | None]:
         audit_id = self._audit.open_record(
             pilot_id=profile.pilot,
@@ -366,11 +376,8 @@ class T53Pipeline:
         elif self._dry_run:
             logger.info("[C5] dry-run — skipping broker dispatch")
             result = self._dry_run_result(request, event, profile)
-        elif self._wp3_simulation:
-            logger.info("[C5] wp3-simulation — dispatching to WP3 output topic")
-            result, rego_rule = self._dispatch(request, event, profile, wp3_mode=True)
         else:
-            result, rego_rule = self._dispatch(request, event, profile)
+            result, rego_rule = self._dispatch(request, event, profile, wp3_mode=wp3_source)
 
         logger.info(
             f"[C3+C4] overall_success={result.overall_success} "
