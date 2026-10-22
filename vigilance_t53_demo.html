@@ -1756,37 +1756,54 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
   <button class="nav-btn primary" id="btnNext" onclick="navigate(1)">Next →</button>
 </div>
 
-<!-- ── PANEL 14: C1' WP3 INGESTION ── -->
+<!-- ── PANEL 14: C1' WP3 SCENARIO ── -->
 <div class="step-panel" id="panel14">
   <div class="step-header">
     <div class="step-icon" style="background:#0d2137;font-size:18px;font-weight:700;color:#79c0ff;font-family:monospace;">C1′</div>
     <div>
-      <div class="step-label" style="color:#79c0ff;">WP3 / WP7 — Component C1 (parallel path)</div>
-      <div class="step-title">WP3 Synthetic Event Ingestion</div>
-      <div class="step-subtitle">POST /api/v1/wp3/events or wp3.events.raw broker topic · Same C1 normalisation · wp3_source=True stored per-event · Dispatch → t53.wp3_results</div>
+      <div class="step-label" style="color:#79c0ff;">WP3 / WP7 — Full Scenario</div>
+      <div class="step-title">WP3 Synthetic Event → Full Pipeline → t53.wp3_results</div>
+      <div class="step-subtitle">Same C1 normalisation · Same C5 → C3 → C4 execution · Dispatch routed to t53.wp3_results instead of t53.actions.dispatch</div>
     </div>
   </div>
 
+  <!-- Parser format guidance -->
   <div class="card" style="margin-bottom:14px;">
-    <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>C1′ processing pipeline — what differs from the pilot path</div>
-    <div class="tl">
-      <div class="tl-item"><div class="tl-dot" style="background:#0d2137;">1a</div><div><div class="tl-title">WP3 submits via <code>POST /api/v1/wp3/events</code> or publishes to <code>wp3.events.raw</code></div><div class="tl-desc">Thread-3 in <code>service.py</code> consumes the broker path; the REST endpoint is the pull alternative. Both call <code>ingest_event(wp3_source=<strong style="color:#79c0ff;">True</strong>)</code>.</div></div></div>
-      <div class="tl-item"><div class="tl-dot" style="background:#1f3a5c;">1b</div><div><div class="tl-title">Same C1 parser chain: CEF → ECS → OT JSON → Syslog → LLM fallback</div><div class="tl-desc">WP3 synthetic events use the same WP5 event schema as real pilots — C1 normalises them identically.</div></div></div>
-      <div class="tl-item"><div class="tl-dot" style="background:#0d2137;">1c</div><div><div class="tl-title"><code style="color:#79c0ff;">_event_cache[event_id]["wp3_source"] = True</code></div><div class="tl-desc">The per-event flag is stored alongside the CanonicalEvent in the in-memory cache. When T5.4 later sends an <code>ActionRequest</code> for this <code>event_id</code>, <code>execute_action_request()</code> reads the flag and routes dispatch accordingly.</div></div></div>
-      <div class="tl-item"><div class="tl-dot" style="background:#238636;">1d</div><div><div class="tl-title">CanonicalEvent stored in SQLite + published to <code>t53.canonical_events</code></div><div class="tl-desc">T5.4 (GFT) consumes it exactly as it would a real pilot event. The <strong>dispatch routing decision happens later</strong>, at <code>execute_action_request()</code> time — not here.</div></div></div>
-      <div class="tl-item"><div class="tl-dot" style="background:#0d1a2a;border:2px solid #1f6feb;">↳</div><div><div class="tl-title">After T5.4 ActionRequest → dispatch routes to <code style="color:#79c0ff;">t53.wp3_results</code></div><div class="tl-desc">Real pilot events go to <code>t53.actions.dispatch</code>. WP3 events go to <code>t53.wp3_results</code>. Both paths run the full C5 → C3 → C4 pipeline — only the output topic differs.</div></div></div>
+    <div class="card-title"><span class="dot" style="background:#e3b341;"></span>Which C1 parser will WP3 events use?</div>
+    <div style="font-size:12.5px;color:#8b949e;line-height:1.7;margin-bottom:10px;">
+      WP3/STAM controls the format of synthetic events — C1 applies the same parser chain (<strong>CEF → ECS → OT JSON → Syslog → LLM fallback</strong>) as it does for real pilots.
+      The format choice is an interface agreement between INNOV and WP3; it is not yet finalised.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#3fb950;margin-bottom:5px;">OT JSON — recommended</div>
+        <div style="font-size:11px;color:#6e7681;line-height:1.6;">Best fit for OT/SCADA simulation. Same format Siemens uses. Deterministic parser, zero LLM cost, &lt;200ms. INNOV recommendation: WP3 adopt this for structured synthetic OT events.</div>
+      </div>
+      <div style="background:#0d2a1a;border:1px solid #238636;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#3fb950;margin-bottom:5px;">ECS / CEF — supported</div>
+        <div style="font-size:11px;color:#6e7681;line-height:1.6;">Good for cyber threat simulation. Elastic Common Schema or CEF — both deterministic, zero LLM cost. WP3 can use these for network/IT-layer synthetic events.</div>
+      </div>
+      <div style="background:#2a1a00;border:1px solid #9e6a03;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#e3b341;margin-bottom:5px;">LLM fallback — unstructured</div>
+        <div style="font-size:11px;color:#6e7681;line-height:1.6;">Free-text narrative synthetic events fall through to Mistral 7B. Adds 20–60s latency. Use only for novel scenario descriptions that can't be expressed in OT JSON / ECS / CEF.</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#6e7681;padding:8px 12px;background:#161b22;border-radius:6px;">
+      <strong style="color:#8b949e;">Open item:</strong> INNOV to agree WP3 synthetic event format with STAM at M7–M9.
+      Recommendation: OT JSON for structured OT scenarios, ECS for cyber scenarios, LLM only as a last resort.
     </div>
   </div>
 
-  <div class="live-section" style="border-color:#1f6feb;">
+  <!-- Step A: C1' ingestion — structured (OT JSON, no LLM) -->
+  <div class="live-section" style="border-color:#1f6feb;margin-bottom:10px;">
     <div class="live-header" style="background:#0d2137;border-bottom-color:#1f6feb;">
-      <span class="live-badge" style="background:#0d2137;color:#79c0ff;border-color:#1f6feb;">● Live</span>
-      <span class="live-endpoint">POST /api/v1/wp3/events — <strong style="color:#79c0ff;">WP3 synthetic event → wp3_source=True → dispatch to t53.wp3_results</strong></span>
-      <button class="run-btn" style="background:#1f6feb;" onclick="runWp3Event()" id="btn-wp3-event">▶ Submit WP3 Event</button>
+      <span class="live-badge" style="background:#0d2137;color:#79c0ff;border-color:#1f6feb;">● Live — Step A</span>
+      <span class="live-endpoint">POST /api/v1/wp3/events — <strong style="color:#79c0ff;">OT JSON (structured synthetic event · zero LLM)</strong></span>
+      <button class="run-btn" style="background:#1f6feb;" onclick="runWp3Event()" id="btn-wp3-event">▶ Submit (no LLM)</button>
     </div>
     <div class="live-body">
       <div class="req-label-row">
-        <div class="api-req-label">Request body — WP3 synthetic event (same schema as pilot events) — edit freely</div>
+        <div class="api-req-label">WP3 structured synthetic event — OT JSON format — edit freely</div>
         <span class="req-edit-hint">✏️ editable</span>
       </div>
       <textarea class="req-body" id="req-wp3-event">{
@@ -1804,12 +1821,12 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
       <div class="api-resp" id="resp-wp3-event">
         <div class="resp-header"><span class="resp-badge resp-ok" id="resp-wp3-event-badge">202 Accepted</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-wp3-event-time"></span></div>
         <div id="wp3-highlights" style="display:none;margin:10px 0;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
-        <div class="api-req-label" style="margin-top:8px;">Full API response — note <code>wp3_source: true</code></div>
+        <div class="api-req-label" style="margin-top:8px;">Response — note <code>wp3_source: true</code></div>
         <pre id="resp-wp3-event-body"></pre>
         <div id="wp3-ce-section" style="display:none;margin-top:10px;">
           <div class="api-req-label" style="display:flex;align-items:center;gap:8px;">
             <span style="background:#0d2137;border:1px solid #1f6feb;color:#79c0ff;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:700;">canonical_event</span>
-            published to <code>t53.canonical_events</code> → T5.4 → ActionRequest → dispatch to <code style="color:#79c0ff;">t53.wp3_results</code>
+            published to <code>t53.canonical_events</code> · wp3_source stored in cache
           </div>
           <pre id="resp-wp3-ce-body" style="border-color:#1f6feb;margin-top:6px;"></pre>
         </div>
@@ -1818,10 +1835,87 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
     </div>
   </div>
 
+  <!-- Step A': C1' ingestion — LLM fallback -->
+  <div class="live-section" style="border-color:#9e6a03;margin-bottom:14px;">
+    <div class="live-header" style="background:#2a1a00;border-bottom-color:#9e6a03;">
+      <span class="live-badge" style="background:#2a1a00;color:#e3b341;border-color:#9e6a03;">● Live — Step A′</span>
+      <span class="live-endpoint">POST /api/v1/wp3/events — <strong style="color:#e3b341;">free-text narrative synthetic event → Mistral 7B LLM fallback</strong></span>
+      <button class="run-btn" style="background:#9e6a03;" onclick="runWp3EventLLM()" id="btn-wp3-event-llm">▶ Submit (LLM path)</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">WP3 free-text synthetic scenario — no schema match → LLM extracts fields — edit freely</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-wp3-event-llm" style="min-height:90px;">{
+  "raw": "SYNTHETIC SCENARIO: D-VISOR simulation detected anomalous OPC-UA register write at 03:17 UTC on WWTP aeration control PLC in Zone-B. Suspected lateral movement from engineering workstation 10.40.3.88. Safety relay interlock bypass attempt flagged. Severity CRITICAL.",
+  "description": "WP3 narrative synthetic event — LLM fallback demo"
+}</textarea>
+      <div class="info-box" style="margin-top:6px;font-size:12px;">No schema match → C1 falls through to Mistral 7B. Expect 20–60s latency on CPU. This path is recommended only when structured formats cannot represent the synthetic scenario.</div>
+      <div class="spinner" id="spin-wp3-event-llm"><div class="spin"></div> <span id="spin-wp3-event-llm-msg">C1 schema detector: no match → calling Mistral 7B…</span></div>
+      <div class="api-resp" id="resp-wp3-event-llm">
+        <div class="resp-header"><span class="resp-badge" id="resp-wp3-event-llm-badge">202 Accepted</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-wp3-event-llm-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">Response</div>
+        <pre id="resp-wp3-event-llm-body"></pre>
+        <div class="success-box" id="wp3-event-id-llm-box" style="display:none;background:#2a1a00;border-color:#9e6a03;color:#e3b341;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step B: Full WP3 Pipeline -->
+  <div class="card" style="border-color:#1f6feb;margin-bottom:14px;">
+    <div class="card-title"><span class="dot" style="background:#79c0ff;"></span>Step B — Full WP3 Pipeline: C5 → C3 → C4 → t53.wp3_results</div>
+    <div style="font-size:12.5px;color:#8b949e;line-height:1.7;margin-bottom:8px;">
+      Same call as the regular Full Pipeline (<code>POST /api/v1/action-requests</code>). The only difference is that because the <code>event_id</code> was ingested via Step A / A′, the
+      <code>_event_cache</code> holds <code>wp3_source=True</code> for it — so <code>_dispatch()</code> routes to
+      <strong><code style="color:#79c0ff;">t53.wp3_results</code></strong> instead of <code>t53.actions.dispatch</code>.
+      The <code>ActionResult</code> objects carry <code>plugin="wp3_dispatch"</code>.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;font-size:11.5px;color:#6e7681;">
+      <div style="background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#6e7681;margin-bottom:4px;">Real pilot path</div>
+        C5 → C3 → C4 → <code>t53.actions.dispatch</code> → pilot tool APIs (OTE / Siemens)
+      </div>
+      <div style="background:#0d2137;border:1px solid #1f6feb;border-radius:6px;padding:10px 12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#79c0ff;margin-bottom:4px;">WP3 path (this step)</div>
+        C5 → C3 → C4 → <code style="color:#79c0ff;">t53.wp3_results</code> → WP7 consumer (URL TBD)
+      </div>
+    </div>
+  </div>
+
+  <div class="live-section" style="border-color:#1f6feb;">
+    <div class="live-header" style="background:#0d2137;border-bottom-color:#1f6feb;">
+      <span class="live-badge" style="background:#0d2137;color:#79c0ff;border-color:#1f6feb;">● Live — Step B</span>
+      <span class="live-endpoint">POST /api/v1/action-requests — <strong style="color:#79c0ff;">full C5 → C3 → C4 → t53.wp3_results</strong></span>
+      <button class="run-btn" style="background:#1f6feb;" onclick="runWp3Pipeline()" id="btn-wp3-pipeline">▶ Execute WP3 Pipeline</button>
+    </div>
+    <div class="live-body">
+      <div class="req-label-row">
+        <div class="api-req-label">Request body — event_id auto-fills from Step A. Edit freely.</div>
+        <span class="req-edit-hint">✏️ editable</span>
+      </div>
+      <textarea class="req-body" id="req-wp3-pipeline">{
+  "request_id": "wp3-req-0001-stam-synthetic",
+  "event_id": "(run Step A first)",
+  "pilot": "INDUSTRY_4",
+  "actions": ["isolate_plc", "notify_soc", "create_incident"],
+  "policy_update": "Deny all OPC-UA traffic from Zone-B to Zone-A for 4 hours",
+  "agent_confidence": 0.91
+}</textarea>
+      <div class="spinner" id="spin-wp3-pipeline"><div class="spin"></div> <span id="spin-wp3-pipeline-msg">C5 safety gate running (WP3 path)…</span></div>
+      <div class="api-resp" id="resp-wp3-pipeline">
+        <div class="resp-header"><span class="resp-badge" id="resp-wp3-pipeline-badge">200 OK</span><span style="font-size:11px;color:#6e7681;margin-left:8px;" id="resp-wp3-pipeline-time"></span></div>
+        <div class="api-req-label" style="margin-top:8px;">ExecutionResult — action_results should show <code>plugin="wp3_dispatch"</code></div>
+        <pre id="resp-wp3-pipeline-body"></pre>
+        <div class="success-box" id="wp3-pipeline-result-box" style="display:none;background:#0d2137;border-color:#1f6feb;color:#79c0ff;"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="info-box" style="margin-top:10px;font-size:12px;border-color:#1f6feb;background:#0d1a2a;">
-    WP3 events appear in <code>GET /api/v1/events</code> alongside pilot events — filter by <code>?pilot=INDUSTRY_4</code> (or whichever sector the synthetic event resolves to).
-    The <code>wp3_source</code> flag is in-memory only; it is not persisted to SQLite on the CanonicalEvent itself.
-    To see the dispatch routed to <code>t53.wp3_results</code>, use the <strong>Full Pipeline (T5.4)</strong> step with the <code>event_id</code> from this response.
+    WP3 events appear in <code>GET /api/v1/events</code> and <code>GET /api/v1/audit</code> alongside pilot events.
+    The <code>wp3_source</code> flag is in-memory only — not persisted to SQLite.
+    If the container restarts between Step A and Step B, <code>wp3_source</code> is lost and dispatch falls back to <code>t53.actions.dispatch</code>. Re-ingest via Step A after any restart.
   </div>
 </div>
 
@@ -1840,13 +1934,15 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
   let capturedRequestIdKnown = null;
   let capturedRequestIdLLM   = null;
   let capturedAuditId        = null;
+  let capturedWp3EventId    = null;
+  let capturedWp3EventIdLLM = null;
   let capturedRegoNl       = null;
   let capturedRegoOutput   = null;
 
   const nodeMap = [
     ['n0'],['n1','n6'],['nT4'],['n5','n3','n4','n6'],['n3','n4'],['n4'],['nT'],
     ['n1','n6','n5','n3','n4','nT'],[],['n3'],[],['n5'],[],[],
-    ['n1','n6'],  // panel 14: C1' WP3 ingestion — same C1 nodes
+    ['n1','n6','n5','n3','n4'],  // panel 14: C1' WP3 full scenario
   ];
 
   // ── helpers ──────────────────────────────────────────────────────────────────
@@ -2102,7 +2198,6 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
         document.getElementById('wp3-ce-section').style.display = 'block';
         document.getElementById('resp-wp3-ce-body').innerHTML = fmtJSON(d.canonical_event);
       }
-      // Highlight tiles
       const ce = d.canonical_event || {};
       const tiles = [
         { label:'wp3_source', value:'true', color:'#79c0ff', bg:'#0d2137', border:'#1f6feb' },
@@ -2113,9 +2208,11 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
       hl.style.display='grid';
       hl.innerHTML = tiles.map(t=>`<div style="background:${t.bg};border:1px solid ${t.border};border-radius:8px;padding:10px 14px;"><div style="font-size:10px;color:#6e7681;font-weight:700;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px;">${t.label}</div><div style="font-size:15px;font-weight:700;color:${t.color};font-family:monospace;">${t.value}</div></div>`).join('');
       if (d.event_id) {
+        capturedWp3EventId = d.event_id;
         const box = document.getElementById('wp3-event-id-box');
         box.style.display = 'block';
-        box.innerHTML = '✅ <strong>event_id captured (WP3 path):</strong> <code style="color:#79c0ff;">'+d.event_id+'</code><br><span style="font-size:11px;color:#6e7681;">Dispatch for this event_id will route to <code>t53.wp3_results</code> when T5.4 sends its ActionRequest.</span>';
+        box.innerHTML = '✅ <strong>WP3 event_id (structured):</strong> <code style="color:#79c0ff;">'+d.event_id+'</code>';
+        injectWp3EventId(d.event_id);
         EID_TAIDS.forEach(id => { injectEventId(id, d.event_id); });
         refreshEidPills();
         const eidInput = document.getElementById('param-get-event-id');
@@ -2124,6 +2221,83 @@ Thread-3: wp3.events.raw         <span class="cmt"># WP3 synthetic events</span>
     } catch(e) { showResp('wp3-event', {error: e.message}, 'Error', Date.now()-t0); }
     setSpinner('wp3-event', false);
     document.getElementById('btn-wp3-event').disabled = false;
+  }
+
+  async function runWp3EventLLM() {
+    const payload = readTA('req-wp3-event-llm');
+    if (!payload) return;
+    setSpinner('wp3-event-llm', true);
+    document.getElementById('btn-wp3-event-llm').disabled = true;
+    const t0 = Date.now();
+    let timer = setInterval(() => {
+      const el = document.getElementById('spin-wp3-event-llm-msg');
+      if (el) { const s = Math.round((Date.now()-t0)/1000); el.textContent = `C1 LLM fallback running… ${s}s`; }
+    }, 1000);
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/wp3/events', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      const latency = Date.now()-t0;
+      showResp('wp3-event-llm', d, r.status+(r.ok?' OK':''), latency);
+      if (d.event_id) {
+        capturedWp3EventIdLLM = d.event_id;
+        const box = document.getElementById('wp3-event-id-llm-box');
+        box.style.display = 'block';
+        box.innerHTML = '✅ <strong>WP3 event_id (LLM path):</strong> <code style="color:#e3b341;">'+d.event_id+'</code>';
+        injectWp3EventId(d.event_id);
+        EID_TAIDS.forEach(id => { injectEventId(id, d.event_id); });
+        refreshEidPills();
+      }
+    } catch(e) { showResp('wp3-event-llm', {error: e.message}, 'Error', Date.now()-t0); }
+    clearInterval(timer);
+    setSpinner('wp3-event-llm', false);
+    document.getElementById('btn-wp3-event-llm').disabled = false;
+  }
+
+  async function runWp3Pipeline() {
+    const payload = readTA('req-wp3-pipeline');
+    if (!payload) return;
+    setSpinner('wp3-pipeline', true);
+    document.getElementById('btn-wp3-pipeline').disabled = true;
+    const t0 = Date.now();
+    let phase = 0;
+    const phases = ['C5 safety gate running (WP3)…','C3 policy translation…','C4 dispatch → t53.wp3_results…'];
+    let timer = setInterval(() => {
+      const el = document.getElementById('spin-wp3-pipeline-msg');
+      if (el) { el.textContent = phases[phase % phases.length]; phase++; }
+    }, 4000);
+    try {
+      const r = await fetch(BASE_URL + '/api/v1/action-requests', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      const latency = Date.now()-t0;
+      showResp('wp3-pipeline', d, r.status+(r.ok?' OK':''), latency);
+      if (d.request_id || d.overall_success !== undefined) {
+        const box = document.getElementById('wp3-pipeline-result-box');
+        box.style.display = 'block';
+        const ok = d.overall_success;
+        const wp3Plugin = (d.action_results||[]).some(a => a.plugin === 'wp3_dispatch');
+        box.innerHTML = (ok ? '✅' : '⚠️') + ' <strong>Pipeline result:</strong> overall_success=' +
+          '<code style="color:'+(ok?'#3fb950':'#f85149')+';">'+ok+'</code>' +
+          (wp3Plugin ? ' · <span style="color:#79c0ff;">dispatch→ t53.wp3_results ✓</span>' : '') +
+          (d.policy_translation?.rego_output ? ' · Rego rule generated ✓' : '');
+      }
+    } catch(e) { showResp('wp3-pipeline', {error: e.message}, 'Error', Date.now()-t0); }
+    clearInterval(timer);
+    setSpinner('wp3-pipeline', false);
+    document.getElementById('btn-wp3-pipeline').disabled = false;
+  }
+
+  function injectWp3EventId(eid) {
+    const ta = document.getElementById('req-wp3-pipeline');
+    if (!ta) return;
+    try {
+      const obj = JSON.parse(ta.value);
+      obj.event_id = eid;
+      ta.value = JSON.stringify(obj, null, 2);
+    } catch(_) {}
   }
 
   function renderEventHighlights(d, latency) {
